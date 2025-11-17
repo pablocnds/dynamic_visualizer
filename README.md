@@ -12,4 +12,6 @@ Interactive framework for loading processed analytical datasets (CSV or JSON) an
 - CSV inputs should include at least two columns describing X- and Y-axis values (default expectation is `x_axis`/`y_axis`, configurable via interpreters noted in the development guide).
 - JSON inputs must satisfy `schema/data_payload.schema.json` (top-level metadata plus a `data` object with axis arrays).
 
+Once the GUI is running, choose a file from the sidebar list (or add a new file) to load it—datasets are not auto-displayed. Use the “Reset View” button if you pan/zoom and want to snap the axes back to the current data bounds.
+
 Keep this README synchronized with major development milestones.

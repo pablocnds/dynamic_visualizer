@@ -1,0 +1,9 @@
+{
+  "dataset": "simple_series",
+  "data": {
+    "x_label": "Index",
+    "y_label": "Value",
+    "x_axis": [0, 1, 2],
+    "y_axis": [0.1, 0.2, 0.3]
+  }
+}

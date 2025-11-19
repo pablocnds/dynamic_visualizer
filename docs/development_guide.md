@@ -9,7 +9,7 @@
 1. Load generic two-axis datasets from CSV or JSON files under `example_data/` (later arbitrary roots) and render in < 1 second when cached.
 2. GUI user can choose which file(s) to visualize without restarting the application. Future revisions will allow selecting configuration cards/profiles.
 3. Application must run as a local desktop app without requiring a server or file uploads—file selectors operate directly on local paths. **Status:** satisfied by PySide6/PyQtGraph plan; revisit if packaging introduces constraints.
-4. Interpretation layer defaults to a simple axis-mapping logic now but must evolve to support declarative "cards"/"profiles" (probably though TOML) describing sources and rendering specifics. **Status:** pending detailed specification once first prototype is stable.
+4. Interpretation layer defaults to a simple axis-mapping logic now but must evolve to support declarative cards (TOML) describing sources and rendering specifics (see `docs/card_specification.md`). **Status:** spec drafted; implementation starts after the base GUI stabilizes.
 5. Support multiple visualization types in the long run (line plots, scatter overlays, boolean grids). Only line plots are implemented in phase 1. **Status:** boolean map and composite plot requirements are TBD.
 6. Provide caching so previously rendered plots switch instantly; acceptable implementations include in-memory memoization plus optional persistent caches. Avoid large memory footprints by setting cache size limits for cases of long sessions with multiple plots.
 7. To guarantee speed and responsiveness, with large datasets consider downsampling strategies during rendering and/or caching to keep data handling efficient (e.g., PyQtGraph's built-in decimation).
@@ -43,7 +43,7 @@
 
 5. **Configuration & Cards**
    - Short term: default behavior if no card is supplied; treat each CSV/JSON file as a single dataset containing one X/Y pair.
-   - Future: `*.toml` cards describing interpreters, dataset glob patterns, and visualization overrides. JSON schema for cards will be designed alongside interpreter generalization. **Status:** not yet defined.
+   - Future: `*.toml` cards describing interpreters, dataset glob patterns, and visualization overrides. Variables (`{{VAR}}` or `*`) are auto-populated by scanning directory/file names (single-level components only), defaulting to the alphabetical first result. Cards declare a single `pivot_chart` variable controlling cycling; wildcard behaves like an anonymous variable. Subcards inherit global options but may override style or layout (e.g., `chart_height`). Validation (schema, clamping sums >100%, missing files) is tracked in `docs/card_specification.md`. **Status:** documentation established; runtime implementation pending.
 
 ## Data Formats
 - **CSV:** Expect two columns describing the values to plot on each axis (default assumption: `x_axis` and `y_axis`). Additional columns should be retained for future interpreters but ignored by default until mappings are provided.
@@ -88,7 +88,7 @@
 1. Implement CSV/JSON loaders and caching primitives. *(In progress soon)*
 2. Build line chart interpreter and PyQtGraph renderer.
 3. Create PySide6 GUI for file selection and visualization display.
-4. Introduce TOML card parser; expand to multi-plot and boolean map support.
+4. Introduce TOML card parser, starting with the simple wildcard card, then layering multivariable/composite features per `docs/card_specification.md`; expand to boolean map support afterwards.
 5. Layer automated performance regression tests and documentation updates.
 
 > ⚠️ **Areas flagged for later revision:** card specification, dataset discovery UX, boolean map visualization strategy, benchmark methodology, and CLI tooling. Revisit these sections after the initial single-plot experience is functional.

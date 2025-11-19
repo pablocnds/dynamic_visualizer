@@ -6,7 +6,7 @@ Interactive framework for loading processed analytical datasets (CSV or JSON) an
 1. `python3 -m venv .venv && source .venv/bin/activate`
 2. `pip install -r requirements.txt`
 3. Launch the prototype GUI via `PYTHONPATH=src python -m visualizer.app`.
-4. Follow `docs/development_guide.md` for architecture notes, roadmap, and packaging decisions.
+4. Follow `docs/development_guide.md` (architecture/roadmap) and `docs/card_specification.md` (card format) as you extend the project.
 
 ## Data Formats
 - CSV inputs should include at least two columns describing X- and Y-axis values (default expectation is `x_axis`/`y_axis`, configurable via interpreters noted in the development guide).

@@ -2,7 +2,7 @@
 # and be able to move through the different available classes
 
 [global]
-file_pivot = {{CLASS}}
+pivot_chart = {{CLASS}}
 chart_style = "line"
 
 [subcards.time_series]

@@ -14,4 +14,9 @@ Interactive framework for loading processed analytical datasets (CSV or JSON) an
 
 Once the GUI is running, choose a file from the sidebar list (or add a new file) to load it—datasets are not auto-displayed. Use the “Reset View” button if you pan/zoom and want to snap the axes back to the current data bounds.
 
+## Cards
+- Card prototypes live under `examples/cards`. The app automatically lists them and currently supports the simple wildcard card format.
+- Select a card to auto-discover the matching datasets; use the Prev/Next controls to cycle through its files.
+- Card behavior and schema are described in `docs/card_specification.md`.
+
 Keep this README synchronized with major development milestones.

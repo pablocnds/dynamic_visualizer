@@ -3,7 +3,7 @@
 # When switching between visualizations in the GUI, it will go through all valid files that
 # follow the filepath pattern.
 
-filepath = "<CARD_DIR>/data/simple_study/*"
+filepath = "<CARD_DIR>/../data/simple_study/*"
 
 chart_style = "line"
 

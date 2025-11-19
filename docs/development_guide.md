@@ -36,7 +36,7 @@
    - Responsible for applying shared styling themes so GUI stays consistent.
 
 4. **GUI / Orchestration Layer**
-   - PySide6 application with panels for file selection (user explicitly chooses which dataset to load), summary statistics, quick visualization toggles (line/scatter/etc.), a “Reset View” button to re-fit axes, and future controls for interpretation cards.
+   - PySide6 application with panels for file selection (user explicitly chooses which dataset to load), summary statistics, quick visualization toggles (line/scatter/etc.), a “Reset View” button to re-fit axes, and card selectors (currently supports the simple wildcard card with Prev/Next navigation; richer card controls forthcoming).
    - The central view embeds PyQtGraph widgets produced by the visualization layer.
    - Event chain: user action → repository loads data → interpreter → renderer → cached figure → widget redraw.
    - **Pending decisions:** navigation for multi-plot dashboards and how to present boolean maps; revisit during phase 2.

@@ -11,6 +11,14 @@ class VisualizationType(str, Enum):
     LINE = "line"
     SCATTER = "scatter"
 
+    @classmethod
+    def from_string(cls, value: str) -> VisualizationType:
+        normalized = value.strip().lower()
+        for member in cls:
+            if member.value == normalized:
+                return member
+        raise ValueError(f"Unsupported visualization type: {value}")
+
 
 @dataclass(frozen=True)
 class PlotSpec:

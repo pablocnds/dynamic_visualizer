@@ -7,6 +7,8 @@ This document defines the configuration format for visualization cards. It is a 
 - Enforce "convention over configuration" by auto-populating variables (no manual selection) and providing sensible defaults for chart styles/layouts.
 - Support progressive complexity: single-series cards, multi-variable switching, multi-panel comparisons, composite dashboards.
 
+> **Implementation status:** the first increment supports simple cards with wildcard file patterns (no named variables or subcards yet). Other sections define the intended behaviors for upcoming milestones.
+
 ## Common Concepts
 - **Card file root (`<CARD_DIR>`)**: placeholder for the directory where the card resides. Paths are resolved relative to it.
 - **Data root**: Cards are expected to reference files under a controlled `data/` hierarchy. Discovery only walks directories referenced by a card to avoid deep scans.

@@ -11,10 +11,10 @@ chart_style = "line"
 
 [subcards.dataset1]
 chart_height = 50%
-filepath = "<CARD_DIR>/data/complex_study/{{DATASET_1}}/{{CLASS}}/time_series.json"
+filepath = "<CARD_DIR>/../data/complex_study/{{DATASET_1}}/{{CLASS}}/time_series.json"
 
 [subcards.dataset2]
-filepath = "<CARD_DIR>/data/complex_study/{{DATASET_2}}/{{CLASS}}/time_series.json"
+filepath = "<CARD_DIR>/../data/complex_study/{{DATASET_2}}/{{CLASS}}/time_series.json"
 
 # If chart height is not specified, it will deduce it from the leftover space
 # If multiple unspecified heights, divide equally

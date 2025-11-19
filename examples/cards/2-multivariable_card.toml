@@ -4,7 +4,7 @@
 # Additionally, both DATASET and CLASS are possible to change in the GUI through sliders
 
 # <CARD_DIR> is substituted by the base dir where the card is located
-filepath = "<CARD_DIR>/data/complex_study/{{DATASET}}/{{CLASS}}/time_series.json"
+filepath = "<CARD_DIR>/../data/complex_study/{{DATASET}}/{{CLASS}}/time_series.json"
 
 chart_style = "line"
 

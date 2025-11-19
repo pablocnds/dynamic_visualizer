@@ -7,7 +7,7 @@ chart_style = "line"
 
 [subcards.time_series]
 chart_height = 40%
-filepath = "<CARD_DIR>/data/complex_study/{{DATASET}}/{{CLASS}}/time_series.json"
+filepath = "<CARD_DIR>/../data/complex_study/{{DATASET}}/{{CLASS}}/time_series.json"
 
 [subcards.scatter]
-filepath = "<CARD_DIR>/data/complex_study/{{DATASET}}/{{CLASS}}/scatter.json"
+filepath = "<CARD_DIR>/../data/complex_study/{{DATASET}}/{{CLASS}}/scatter.json"

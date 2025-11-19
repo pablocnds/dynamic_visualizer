@@ -1,0 +1,13 @@
+# This example will visualize for a given DATASET and CLASS its time_series and scatter data
+# and be able to move through the different available classes
+
+[global]
+file_pivot = {{CLASS}}
+chart_style = "line"
+
+[subcards.time_series]
+chart_height = 40%
+filepath = "<CARD_DIR>/data/complex_study/{{DATASET}}/{{CLASS}}/time_series.json"
+
+[subcards.scatter]
+filepath = "<CARD_DIR>/data/complex_study/{{DATASET}}/{{CLASS}}/scatter.json"

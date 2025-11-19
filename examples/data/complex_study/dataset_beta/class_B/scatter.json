@@ -1,0 +1,11 @@
+{
+  "dataset": "dataset_beta",
+  "class": "class_B",
+  "type": "scatter",
+  "data": {
+    "x_label": "Minute",
+    "y_label": "Variance",
+    "x_axis": [0.2, 1.1, 2.4, 3.8, 5.0, 6.7, 7.9, 4.6, 8.5, 9.8, 10.4],
+    "y_axis": [0.15, 0.16, 0.18, 0.2, 0.23, 0.25, 0.27, 0.29, 0.3, 0.31, 0.32]
+  }
+}

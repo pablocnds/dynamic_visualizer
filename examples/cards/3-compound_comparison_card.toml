@@ -1,0 +1,20 @@
+# This example shows a card with the purpose of visualizing the same data for two different datasets
+# This renders two charts, one for DATASET_1 and another for DATASET_2
+# The datasets can be chosen in the GUI. By default it picks the two possibilities
+
+# As you switch to the next visualization, the CLASS changes for both dataset charts
+# This only works in classes shared for both datasets
+
+[global]
+file_pivot = {{CLASS}}
+chart_style = "line"
+
+[subcards.dataset1]
+chart_height = 50%
+filepath = "<CARD_DIR>/data/complex_study/{{DATASET_1}}/{{CLASS}}/time_series.json"
+
+[subcards.dataset2]
+filepath = "<CARD_DIR>/data/complex_study/{{DATASET_2}}/{{CLASS}}/time_series.json"
+
+# If chart height is not specified, it will deduce it from the leftover space
+# If multiple unspecified heights, divide equally

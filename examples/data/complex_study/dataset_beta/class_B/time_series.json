@@ -1,0 +1,11 @@
+{
+  "dataset": "dataset_beta",
+  "class": "class_B",
+  "type": "time_series",
+  "data": {
+    "x_label": "Minute",
+    "y_label": "Response",
+    "x_axis": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+    "y_axis": [0.7, 1.0, 1.2, 1.6, 1.9, 2.1, 2.4, 2.6, 2.9, 3.1, 3.2]
+  }
+}

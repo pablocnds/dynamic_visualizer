@@ -1,0 +1,10 @@
+# This card will automatically load the visualization for all files within the given path
+
+# When switching between visualizations in the GUI, it will go through all valid files that
+# follow the filepath pattern.
+
+filepath = "<CARD_DIR>/data/simple_study/*"
+
+chart_style = "line"
+
+# Note that the wildcard '*' can only be used as a default variable when no other variables are specified

@@ -36,14 +36,14 @@
    - Responsible for applying shared styling themes so GUI stays consistent.
 
 4. **GUI / Orchestration Layer**
-   - PySide6 application with panels for file selection (user explicitly chooses which dataset to load), summary statistics, quick visualization toggles (line/scatter/etc.), a “Reset View” button to re-fit axes, and card selectors (currently supports the simple wildcard card with Prev/Next navigation; richer card controls forthcoming).
+   - PySide6 application with panels for file selection (user explicitly chooses which dataset to load), summary statistics, quick visualization toggles (line/scatter/etc.), a “Reset View” button to re-fit axes, and card selectors (supports wildcard cards plus multi-variable/composite cards with pivot-aware navigation, per-variable selectors, multi-panel rendering, and per-subcard visualization dropdowns for runtime overrides).
    - The central view embeds PyQtGraph widgets produced by the visualization layer.
    - Event chain: user action → repository loads data → interpreter → renderer → cached figure → widget redraw.
    - **Pending decisions:** navigation for multi-plot dashboards and how to present boolean maps; revisit during phase 2.
 
 5. **Configuration & Cards**
    - Short term: default behavior if no card is supplied; treat each CSV/JSON file as a single dataset containing one X/Y pair.
-   - Future: `*.toml` cards describing interpreters, dataset glob patterns, and visualization overrides. Variables (`{{VAR}}` or `*`) are auto-populated by scanning directory/file names (single-level components only), defaulting to the alphabetical first result. Cards declare a single `pivot_chart` variable controlling cycling; wildcard behaves like an anonymous variable. Subcards inherit global options but may override style or layout (e.g., `chart_height`). Validation (schema, clamping sums >100%, missing files) is tracked in `docs/card_specification.md`. **Status:** documentation established; runtime implementation pending.
+   - Cards (`*.toml`) describe interpreters, dataset glob patterns, and visualization overrides. Variables (`{{VAR}}` or `*`) are auto-populated by scanning directory/file names (single-level components only), defaulting to the alphabetical first result. Cards declare a single `pivot_chart` variable controlling cycling; wildcard behaves like an anonymous variable. Subcards inherit global options but may override style or layout (e.g., `chart_height`). Validation (schema, clamping sums >100%, missing files) is tracked in `docs/card_specification.md`. **Status:** simple wildcard card and single-path multi-variable card implemented; GUI exposes variable selectors (including pivot) for manual overrides; subcards/composite layouts pending.
 
 ## Data Formats
 - **CSV:** Expect two columns describing the values to plot on each axis (default assumption: `x_axis` and `y_axis`). Additional columns should be retained for future interpreters but ignored by default until mappings are provided.

@@ -7,7 +7,7 @@ This document defines the configuration format for visualization cards. It is a 
 - Enforce "convention over configuration" by auto-populating variables (no manual selection) and providing sensible defaults for chart styles/layouts.
 - Support progressive complexity: single-series cards, multi-variable switching, multi-panel comparisons, composite dashboards.
 
-> **Implementation status:** the first increment supports simple cards with wildcard file patterns (no named variables or subcards yet). Other sections define the intended behaviors for upcoming milestones.
+> **Implementation status:** current build supports simple wildcard cards, single-file cards with automatically discovered variables (e.g., Dataset + Class) plus pivot-based cycling, and multi-pane cards with subcards (e.g., comparison/composite cards). Future sections describe additional capabilities (boolean maps, advanced layouts) that are not yet implemented.
 
 ## Common Concepts
 - **Card file root (`<CARD_DIR>`)**: placeholder for the directory where the card resides. Paths are resolved relative to it.
@@ -37,11 +37,10 @@ filepath = "<CARD_DIR>/data/complex/{{DATASET}}/{{CLASS}}/time_series.json"
 ```
 [global]
 chart_style = "line"
-pivot_chart = {{CLASS}}
-file_pivot = {{CLASS}}  # deprecated alias; use pivot_chart instead
+pivot_chart = "{{CLASS}}"
 ```
 - `chart_style`: default visualization applied to the card (string). Subcards inherit unless they define their own.
-- `pivot_chart`: identifies the variable used for cycling. Required when at least one variable exists. Only one variable should be designated.
+- `pivot_chart`: identifies the variable used for cycling. Required when at least one variable exists. Only one variable should be designated. Always wrap the placeholder in quotes so the file remains valid TOML.
 - Additional future settings (e.g., themes) will be documented here.
 
 ## Subcards
@@ -54,6 +53,7 @@ chart_style = "scatter"  # optional override
 ```
 - Inherit `chart_style`, `pivot_chart`, and other global defaults unless overridden.
 - `chart_height`: optional percentage (string with `%`). Missing values are assigned from remaining height equally. If the sum exceeds 100%, the loader clamps and surfaces a validation error in the GUI.
+- `chart_style`: optional visualization override for that panel (e.g., time series = line, scatter = scatter). When omitted, the subcard inherits `global.chart_style`.
 - Missing files per subcard: if a filepath resolves to zero matches, that panel is skipped while others render.
 
 ## Validation

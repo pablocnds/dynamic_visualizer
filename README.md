@@ -15,8 +15,9 @@ Interactive framework for loading processed analytical datasets (CSV or JSON) an
 Once the GUI is running, choose a file from the sidebar list (or add a new file) to load it—datasets are not auto-displayed. Use the “Reset View” button if you pan/zoom and want to snap the axes back to the current data bounds.
 
 ## Cards
-- Card prototypes live under `examples/cards`. The app automatically lists them and currently supports the simple wildcard card format.
-- Select a card to auto-discover the matching datasets; use the Prev/Next controls to cycle through its files.
+- Card prototypes live under `examples/cards`. The app automatically lists them and currently supports the simple wildcard card, the multi-variable (single path) card that cycles via `pivot_chart`, and composite cards with multiple subcards (cards 3 and 4) that may each specify different visualization styles.
+- Select a card to auto-discover the matching datasets; use the Prev/Next controls to cycle through its files (non-pivot variables default to the first alphabetical value, pivot variables cycle). Variable selectors appear in the sidebar so you can manually choose dataset/class combinations (including the active pivot value), and stacked plot panels display each subcard using its configured visualization type—with per-panel mode selectors for on-the-fly overrides.
+- Keyboard shortcuts: when a card is selected, use the left/right arrow keys to move to the previous/next visualization.
 - Card behavior and schema are described in `docs/card_specification.md`.
 
 Keep this README synchronized with major development milestones.

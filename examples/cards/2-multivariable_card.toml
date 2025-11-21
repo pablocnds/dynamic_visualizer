@@ -10,4 +10,4 @@ chart_style = "line"
 
 # The value pivot_chart references will be the switching factor when going to the "next" chart in the GUI
 # For example, next chart of .../dataset_alpha/class_A/... will be .../dataset_alpha/class_B/...
-pivot_chart = {{CLASS}}
+pivot_chart = "{{CLASS}}"

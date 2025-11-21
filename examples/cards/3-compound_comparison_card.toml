@@ -6,11 +6,11 @@
 # This only works in classes shared for both datasets
 
 [global]
-pivot_chart = {{CLASS}}
+pivot_chart = "{{CLASS}}"
 chart_style = "line"
 
 [subcards.dataset1]
-chart_height = 50%
+chart_height = "50%"
 filepath = "<CARD_DIR>/../data/complex_study/{{DATASET_1}}/{{CLASS}}/time_series.json"
 
 [subcards.dataset2]

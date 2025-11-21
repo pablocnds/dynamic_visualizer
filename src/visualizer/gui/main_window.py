@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
+from typing import Dict, List, Optional, Tuple
 
-from PySide6 import QtCore, QtWidgets
+from PySide6 import QtCore, QtGui, QtWidgets
 import pyqtgraph as pg
 
 from visualizer.cards.loader import CardLoader
-from visualizer.cards.models import CardDefinition, CardSession
+from visualizer.cards.models import CardDefinition, CardSession, SubcardDefinition
 from visualizer.data.models import Dataset
 from visualizer.data.repository import DatasetRepository
 from visualizer.interpretation.specs import DefaultInterpreter, PlotSpec, VisualizationType
@@ -30,6 +30,11 @@ class MainWindow(QtWidgets.QMainWindow):
         self._current_path: Optional[Path] = None
         self._card_loader = CardLoader(cards_dir) if cards_dir else None
         self._card_session: Optional[CardSession] = None
+        self._variable_controls: dict[str, QtWidgets.QComboBox] = {}
+        self._active_card_path: Optional[Path] = None
+        self._panel_overrides: Dict[str, VisualizationType | None] = {}
+        self._panel_plot_by_name: Dict[str, pg.PlotWidget] = {}
+        self._latest_panel_data: Dict[str, tuple[Dataset, Path, Optional[str]]] = {}
 
         self._build_ui()
         self._load_initial_sources()
@@ -38,11 +43,19 @@ class MainWindow(QtWidgets.QMainWindow):
         central_widget = QtWidgets.QWidget()
         self.setCentralWidget(central_widget)
 
-        layout = QtWidgets.QHBoxLayout(central_widget)
+        main_layout = QtWidgets.QVBoxLayout(central_widget)
+
+        content_layout = QtWidgets.QHBoxLayout()
+        main_layout.addLayout(content_layout)
+
+        controls_widget = QtWidgets.QWidget()
+        controls_widget.setFixedWidth(320)
+        controls_layout = QtWidgets.QVBoxLayout(controls_widget)
+        content_layout.addWidget(controls_widget)
+
         self._file_list = QtWidgets.QListWidget()
         self._file_list.itemSelectionChanged.connect(self._handle_file_selection)
 
-        controls_layout = QtWidgets.QVBoxLayout()
         controls_layout.addWidget(QtWidgets.QLabel("Available Data Files"))
         controls_layout.addWidget(self._file_list)
 
@@ -55,6 +68,12 @@ class MainWindow(QtWidgets.QMainWindow):
         self._visualization_combo.currentIndexChanged.connect(self._handle_visualization_change)
         controls_layout.addWidget(QtWidgets.QLabel("Visualization Mode"))
         controls_layout.addWidget(self._visualization_combo)
+
+        self._variable_group = QtWidgets.QGroupBox("Card Variables")
+        self._variable_form_layout = QtWidgets.QFormLayout()
+        self._variable_group.setLayout(self._variable_form_layout)
+        self._variable_group.setVisible(False)
+        controls_layout.addWidget(self._variable_group)
 
         controls_layout.addWidget(QtWidgets.QLabel("Cards"))
         self._card_list = QtWidgets.QListWidget()
@@ -76,13 +95,28 @@ class MainWindow(QtWidgets.QMainWindow):
 
         controls_layout.addStretch()
 
-        layout.addLayout(controls_layout, 1)
+        self._plot_stack = QtWidgets.QStackedWidget()
+        self._single_plot_widget = pg.PlotWidget()
+        self._plot_stack.addWidget(self._single_plot_widget)
+        self._multi_plot_container = QtWidgets.QWidget()
+        self._multi_plot_layout = QtWidgets.QVBoxLayout(self._multi_plot_container)
+        self._multi_plot_layout.setContentsMargins(0, 0, 0, 0)
+        self._multi_plot_layout.setSpacing(12)
+        self._plot_stack.addWidget(self._multi_plot_container)
+        self._panel_widgets: List[QtWidgets.QWidget] = []
+        self._panel_plots: List[pg.PlotWidget] = []
+        self._panel_plot_by_name: Dict[str, pg.PlotWidget] = {}
+        self._panel_overrides: Dict[str, VisualizationType | None] = {}
+        self._latest_panel_data: Dict[str, tuple[Dataset, Path, Optional[str]]] = {}
 
-        self._plot_widget = pg.PlotWidget()
-        layout.addWidget(self._plot_widget, 3)
+        content_layout.addWidget(self._plot_stack, 3)
 
         self._status_label = QtWidgets.QLabel("Select a dataset to visualize.")
-        controls_layout.addWidget(self._status_label)
+        self._status_label.setWordWrap(True)
+        self._status_label.setFrameShape(QtWidgets.QFrame.Panel)
+        self._status_label.setFrameShadow(QtWidgets.QFrame.Sunken)
+        self._status_label.setContentsMargins(8, 4, 8, 4)
+        main_layout.addWidget(self._status_label)
         self._update_navigation_buttons()
 
     def _load_initial_sources(self) -> None:
@@ -124,10 +158,14 @@ class MainWindow(QtWidgets.QMainWindow):
             self._load_and_render(Path(path))
 
     def _handle_visualization_change(self, _: int) -> None:
+        if self._card_session:
+            self._render_current_card_selection()
+            return
         if self._current_dataset is None or self._current_path is None:
             return
-        card_style = self._card_session.definition.chart_style if self._card_session else None
-        self._render_dataset(self._current_dataset, self._current_path, card_style=card_style)
+        self._plot_stack.setCurrentWidget(self._single_plot_widget)
+        self._draw_plot(self._single_plot_widget, self._current_dataset, self._current_path, card_style=None)
+        self._status_label.setText(f"Loaded {self._current_path.name}")
 
     def _load_cards(self) -> None:
         if not self._card_loader:
@@ -142,6 +180,11 @@ class MainWindow(QtWidgets.QMainWindow):
         if not selected_items:
             self._card_session = None
             self._update_navigation_buttons()
+            self._variable_group.setVisible(False)
+            self._clear_variable_controls()
+            self._clear_panel_widgets()
+            self._plot_stack.setCurrentWidget(self._single_plot_widget)
+            self._active_card_path = None
             return
         self._file_list.blockSignals(True)
         self._file_list.clearSelection()
@@ -155,31 +198,58 @@ class MainWindow(QtWidgets.QMainWindow):
             return
         try:
             definition = self._card_loader.load_definition(card_path)
-            matches = self._card_loader.resolve_simple_matches(definition)
-            if not matches:
+            matches = self._card_loader.resolve_paths(definition)
+            if not any(matches.values()):
                 self._card_session = None
                 self._status_label.setText("Card has no matching datasets.")
                 self._update_navigation_buttons()
+                self._variable_group.setVisible(False)
+                self._clear_panel_widgets()
                 return
-            self._card_session = CardSession(definition=definition, resolved_paths=matches, index=0)
+            self._card_session = CardSession(definition=definition, matches=matches)
+            self._active_card_path = card_path
+            self._panel_overrides.clear()
             self._update_navigation_buttons()
-            self._load_and_render(matches[0], card_style=definition.chart_style)
+            self._populate_variable_controls()
+            self._render_current_card_selection()
         except Exception as exc:  # pragma: no cover - GUI feedback
             self._card_session = None
             self._status_label.setText(f"Card error: {exc}")
             self._update_navigation_buttons()
+            self._variable_group.setVisible(False)
+            self._clear_panel_widgets()
+            self._active_card_path = None
 
     def _handle_next_view(self) -> None:
         if not self._card_session or not self._card_session.has_paths():
             return
-        path = self._card_session.advance(1)
-        self._load_and_render(path, card_style=self._card_session.definition.chart_style)
+        try:
+            self._card_session.cycle_pivot(1)
+            self._sync_variable_controls()
+            self._render_current_card_selection()
+        except Exception as exc:  # pragma: no cover - GUI feedback
+            self._status_label.setText(f"Card error: {exc}")
 
     def _handle_prev_view(self) -> None:
         if not self._card_session or not self._card_session.has_paths():
             return
-        path = self._card_session.advance(-1)
-        self._load_and_render(path, card_style=self._card_session.definition.chart_style)
+        try:
+            self._card_session.cycle_pivot(-1)
+            self._sync_variable_controls()
+            self._render_current_card_selection()
+        except Exception as exc:  # pragma: no cover - GUI feedback
+            self._status_label.setText(f"Card error: {exc}")
+
+    def keyPressEvent(self, event: QtGui.QKeyEvent) -> None:  # type: ignore[override]
+        if event.key() == QtCore.Qt.Key_Right and self._card_session:
+            self._handle_next_view()
+            event.accept()
+            return
+        if event.key() == QtCore.Qt.Key_Left and self._card_session:
+            self._handle_prev_view()
+            event.accept()
+            return
+        super().keyPressEvent(event)
 
     def _clear_card_selection(self) -> None:
         self._card_list.blockSignals(True)
@@ -187,9 +257,21 @@ class MainWindow(QtWidgets.QMainWindow):
         self._card_list.blockSignals(False)
         self._card_session = None
         self._update_navigation_buttons()
+        self._variable_group.setVisible(False)
+        self._clear_variable_controls()
+        self._panel_overrides.clear()
+        self._panel_plot_by_name.clear()
+        self._latest_panel_data.clear()
+        self._clear_panel_widgets()
+        self._plot_stack.setCurrentWidget(self._single_plot_widget)
+        self._active_card_path = None
 
     def _update_navigation_buttons(self) -> None:
-        active = bool(self._card_session and self._card_session.has_paths())
+        active = bool(
+            self._card_session
+            and self._card_session.has_paths()
+            and self._card_session.definition.pivot_variable
+        )
         self._prev_view_button.setEnabled(active)
         self._next_view_button.setEnabled(active)
 
@@ -198,19 +280,20 @@ class MainWindow(QtWidgets.QMainWindow):
             dataset = self._repository.load(path)
             self._current_dataset = dataset
             self._current_path = path
-            self._render_dataset(dataset, path, card_style=card_style)
+            self._plot_stack.setCurrentWidget(self._single_plot_widget)
+            self._clear_panel_widgets()
+            self._draw_plot(self._single_plot_widget, dataset, path, card_style)
+            self._status_label.setText(f"Loaded {path.name}")
         except Exception as exc:  # pragma: no cover - GUI feedback
             self._status_label.setText(f"Error: {exc}")
 
-    def _render_dataset(self, dataset: Dataset, path: Path, card_style: str | None = None) -> None:
-        override = self._resolve_visualization_override(card_style=card_style)
-        spec = self._interpreter.build_plot_spec(dataset, override=override)
-        self._renderer.render(self._plot_widget, spec)
-        self._current_spec = spec
-        self._status_label.setText(f"Loaded {path.name}")
-        self._plot_widget.enableAutoRange(x=True, y=True)
-
-    def _resolve_visualization_override(self, card_style: str | None = None) -> VisualizationType | None:
+    def _resolve_visualization_override(
+        self,
+        card_style: str | None = None,
+        panel_override: VisualizationType | None = None,
+    ) -> VisualizationType | None:
+        if panel_override:
+            return panel_override
         choice = self._visualization_combo.currentText()
         if choice == "Line":
             return VisualizationType.LINE
@@ -224,4 +307,236 @@ class MainWindow(QtWidgets.QMainWindow):
         return None
 
     def _handle_reset_view(self) -> None:
-        self._plot_widget.enableAutoRange(x=True, y=True)
+        self._single_plot_widget.enableAutoRange(x=True, y=True)
+        for plot in self._panel_plots:
+            plot.enableAutoRange(x=True, y=True)
+
+    def _show_card_panels(
+        self, panels: List[tuple[SubcardDefinition, Dataset, Path, Optional[str]]]
+    ) -> Optional[str]:
+        self._plot_stack.setCurrentWidget(self._multi_plot_container)
+        self._clear_panel_widgets()
+        subcards = [panel[0] for panel in panels]
+        stretches, warning = self._calculate_panel_stretches(subcards)
+        for (subcard, dataset, path, chart_style), stretch in zip(panels, stretches):
+            panel_widget = QtWidgets.QWidget()
+            panel_layout = QtWidgets.QVBoxLayout(panel_widget)
+            header_layout = QtWidgets.QHBoxLayout()
+            title = QtWidgets.QLabel(self._format_panel_title(subcard, path))
+            header_layout.addWidget(title)
+            header_layout.addStretch()
+            mode_label = QtWidgets.QLabel("Mode:")
+            header_layout.addWidget(mode_label)
+            style_combo = self._create_panel_style_combo(subcard.name)
+            header_layout.addWidget(style_combo)
+            panel_layout.addLayout(header_layout)
+            plot_widget = pg.PlotWidget()
+            panel_layout.addWidget(plot_widget)
+            self._multi_plot_layout.addWidget(panel_widget, stretch)
+            self._panel_widgets.append(panel_widget)
+            self._panel_plots.append(plot_widget)
+            self._panel_plot_by_name[subcard.name] = plot_widget
+            self._latest_panel_data[subcard.name] = (dataset, path, chart_style)
+            override = self._panel_overrides.get(subcard.name)
+            self._draw_plot(plot_widget, dataset, path, chart_style, panel_override=override)
+        return warning
+
+    def _calculate_panel_stretches(
+        self, subcards: List[SubcardDefinition]
+    ) -> tuple[List[int], Optional[str]]:
+        specified = [subcard.chart_height for subcard in subcards if subcard.chart_height]
+        total_specified = sum(specified)
+        warning: Optional[str] = None
+        if total_specified > 100:
+            warning = "Subcard heights exceed 100%; clamping proportions."
+        remaining = max(0.0, 100.0 - total_specified)
+        unspecified = [subcard for subcard in subcards if not subcard.chart_height]
+        default_height = (remaining / len(unspecified)) if unspecified and remaining > 0 else 0.0
+        if not specified and not unspecified:
+            default_height = 100.0
+        stretches: List[int] = []
+        for subcard in subcards:
+            height = subcard.chart_height if subcard.chart_height else default_height
+            if total_specified > 100 and subcard.chart_height:
+                height = subcard.chart_height * (100.0 / total_specified)
+            stretches.append(max(int(height) or 1, 1))
+        if not any(stretches):
+            stretches = [1 for _ in subcards]
+        return stretches, warning
+
+    def _format_panel_title(self, subcard: SubcardDefinition, path: Path) -> str:
+        friendly = subcard.name.replace("_", " ").title()
+        return f"{friendly} – {path.name}"
+
+    def _create_panel_style_combo(self, subcard_name: str) -> QtWidgets.QComboBox:
+        combo = QtWidgets.QComboBox()
+        combo.addItems(["Auto", "Line", "Scatter"])
+        override = self._panel_overrides.get(subcard_name)
+        if override == VisualizationType.LINE:
+            combo.setCurrentText("Line")
+        elif override == VisualizationType.SCATTER:
+            combo.setCurrentText("Scatter")
+        combo.currentTextChanged.connect(
+            lambda text, name=subcard_name: self._handle_panel_visualization_change(name, text)
+        )
+        return combo
+
+    def _draw_plot(
+        self,
+        widget: pg.PlotWidget,
+        dataset: Dataset,
+        path: Path,
+        card_style: Optional[str],
+        panel_override: VisualizationType | None = None,
+    ) -> None:
+        override = self._resolve_visualization_override(
+            card_style=card_style,
+            panel_override=panel_override,
+        )
+        spec = self._interpreter.build_plot_spec(dataset, override=override)
+        self._renderer.render(widget, spec)
+        widget.enableAutoRange(x=True, y=True)
+        self._current_spec = spec
+
+    def _handle_panel_visualization_change(self, subcard_name: str, text: str) -> None:
+        if text == "Auto":
+            self._panel_overrides.pop(subcard_name, None)
+        else:
+            self._panel_overrides[subcard_name] = (
+                VisualizationType.LINE if text == "Line" else VisualizationType.SCATTER
+            )
+        self._rerender_panel(subcard_name)
+
+    def _rerender_panel(self, subcard_name: str) -> None:
+        plot = self._panel_plot_by_name.get(subcard_name)
+        data = self._latest_panel_data.get(subcard_name)
+        if not plot or not data:
+            return
+        dataset, path, default_style = data
+        override = self._panel_overrides.get(subcard_name)
+        self._draw_plot(plot, dataset, path, default_style, panel_override=override)
+
+    def _clear_panel_widgets(self) -> None:
+        while self._multi_plot_layout.count():
+            item = self._multi_plot_layout.takeAt(0)
+            widget = item.widget()
+            if widget:
+                widget.deleteLater()
+        for plot in self._panel_plots:
+            plot.deleteLater()
+        self._panel_widgets.clear()
+        self._panel_plots.clear()
+        self._panel_plot_by_name.clear()
+        self._latest_panel_data.clear()
+
+    def _populate_variable_controls(self) -> None:
+        self._clear_variable_controls()
+        if not self._card_session or not self._card_session.definition.variables:
+            self._variable_group.setVisible(False)
+            return
+        self._variable_group.setVisible(True)
+        pivot = self._card_session.definition.pivot_variable
+        for variable in self._card_session.definition.variables:
+            combo = QtWidgets.QComboBox()
+            values = self._card_session.available_values(
+                variable,
+                constrained=(variable == pivot),
+            )
+            combo.addItems(values)
+            combo.currentTextChanged.connect(
+                lambda value, var=variable: self._handle_variable_selection(var, value)
+            )
+            self._variable_controls[variable] = combo
+            self._variable_form_layout.addRow(variable, combo)
+        self._sync_variable_controls()
+
+    def _clear_variable_controls(self) -> None:
+        while self._variable_form_layout.count():
+            item = self._variable_form_layout.takeAt(0)
+            widget = item.widget()
+            if widget:
+                widget.deleteLater()
+        for combo in self._variable_controls.values():
+            combo.deleteLater()
+        self._variable_controls.clear()
+
+    def _sync_variable_controls(self) -> None:
+        if not self._card_session:
+            return
+        pivot = self._card_session.definition.pivot_variable
+        for variable, combo in self._variable_controls.items():
+            if variable == pivot:
+                values = self._card_session.available_values(variable, constrained=True)
+                self._set_combo_items(combo, values)
+            selection_value = self._card_session.selection.get(variable)
+            self._set_combo_value(combo, selection_value)
+
+    def _set_combo_items(self, combo: QtWidgets.QComboBox, values: list[str]) -> None:
+        combo.blockSignals(True)
+        combo.clear()
+        combo.addItems(values)
+        combo.blockSignals(False)
+
+    def _set_combo_value(self, combo: QtWidgets.QComboBox, value: Optional[str]) -> None:
+        if value is None:
+            return
+        combo.blockSignals(True)
+        index = combo.findText(value)
+        if index >= 0:
+            combo.setCurrentIndex(index)
+        combo.blockSignals(False)
+
+    def _handle_variable_selection(self, variable: str, value: str) -> None:
+        if not self._card_session:
+            return
+        try:
+            self._card_session.update_selection(variable, value)
+            self._sync_variable_controls()
+            self._render_current_card_selection()
+        except Exception as exc:  # pragma: no cover - GUI feedback
+            self._status_label.setText(f"Card selection error: {exc}")
+
+    def _render_current_card_selection(self) -> None:
+        if not self._card_session:
+            return
+        try:
+            match_map = self._card_session.current_matches()
+        except Exception as exc:  # pragma: no cover - GUI feedback
+            self._status_label.setText(f"Card error: {exc}")
+            return
+
+        panels = []
+        missing: List[str] = []
+        for subcard in self._card_session.definition.subcards:
+            match = match_map.get(subcard.name)
+            if not match:
+                missing.append(subcard.name)
+                continue
+            try:
+                dataset = self._repository.load(match.path)
+            except Exception as exc:  # pragma: no cover - GUI feedback
+                missing.append(f"{subcard.name} ({exc})")
+                continue
+            chart_style = subcard.chart_style or self._card_session.definition.chart_style
+            panels.append((subcard, dataset, match.path, chart_style))
+
+        if not panels:
+            self._status_label.setText("Card selection has no matching datasets.")
+            return
+
+        active_names = {subcard.name for subcard, _, _, _ in panels}
+        for name in list(self._panel_overrides.keys()):
+            if name not in active_names:
+                self._panel_overrides.pop(name, None)
+
+        warning = self._show_card_panels(panels)
+        selection_text = ", ".join(
+            f"{var}={value}" for var, value in sorted(self._card_session.selection.items())
+        )
+        card_label = self._active_card_path.name if self._active_card_path else "card"
+        message = f"Card {card_label}: {selection_text}"
+        if missing:
+            message += f" (missing: {', '.join(missing)})"
+        if warning:
+            message += f" [{warning}]"
+        self._status_label.setText(message)

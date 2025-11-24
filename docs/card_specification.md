@@ -56,6 +56,21 @@ chart_style = "scatter"  # optional override
 - `chart_style`: optional visualization override for that panel (e.g., time series = line, scatter = scatter). When omitted, the subcard inherits `global.chart_style`.
 - Missing files per subcard: if a filepath resolves to zero matches, that panel is skipped while others render.
 
+## Overlays
+- **Status:** Implemented (cards may specify arrays for `filepath`/`chart_style` to render multiple datasets in a single chart).
+- Configuration:
+  ```toml
+  filepath = [
+    "<CARD_DIR>/data/.../time_series.json",
+    "<CARD_DIR>/data/.../scatter.json"
+  ]
+  chart_style = ["line", "scatter"]  # or a single value applied to every entry
+  ```
+- Behavior:
+  - `filepath` accepts either a string (current behavior) or an array of paths. When an array is provided, each dataset is loaded and drawn within the same chart.
+  - `chart_style` may be a single value (applied to all datasets) or an array whose length matches the number of file paths.
+  - Runtime should pair each path with a chart style (falling back to the global default when fewer styles than paths are provided) and render them together via PyQtGraph.
+
 ## Validation
 - Cards must validate against a TOML schema (to be finalized). Validation covers required keys, allowed chart styles, numeric formats, and layout constraints.
 - Loader should surface actionable errors (missing files, invalid variables, conflicting heights) without crashing the app.

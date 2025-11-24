@@ -10,6 +10,7 @@ class SubcardDefinition:
     name: str
     filepath_template: str
     variables: Tuple[str, ...]
+    filepaths: List[str]
     chart_style: Optional[str] = None
     chart_height: Optional[float] = None
 
@@ -21,6 +22,7 @@ class CardDefinition:
     variables: Tuple[str, ...]
     chart_style: Optional[str] = None
     pivot_variable: Optional[str] = None
+    overlay_panels: Dict[str, "OverlayDefinition"] = field(default_factory=dict)
 
     def has_subcards(self) -> bool:
         return bool(self.subcards)
@@ -141,3 +143,45 @@ class CardSession:
             if self._match_constraints(match.variables, criteria):
                 return match
         return None
+
+    def _build_overlay_series(
+        self, overlay_def: OverlayDefinition, variables: Dict[str, str]
+    ) -> OverlaySeries:
+        series_defs: List[SeriesDefinition] = []
+        styles = overlay_def.chart_styles
+        if not styles:
+            styles = [None] * len(overlay_def.filepaths)
+        elif len(styles) < len(overlay_def.filepaths):
+            styles = styles + [styles[-1]] * (len(overlay_def.filepaths) - len(styles))
+        card_dir = str(self.definition.path.parent)
+        for path_str, style in zip(overlay_def.filepaths, styles):
+            template = path_str.replace("<CARD_DIR>", card_dir)
+            replaced = _replace_variables(template, variables)
+            series_defs.append(SeriesDefinition(path=Path(replaced), chart_style=style))
+        return OverlaySeries(series=series_defs)
+
+
+@dataclass(frozen=True)
+class OverlayDefinition:
+    name: str
+    filepaths: List[str]
+    chart_styles: List[Optional[str]]
+
+
+@dataclass(frozen=True)
+class SeriesDefinition:
+    path: Path
+    chart_style: Optional[str]
+
+
+@dataclass(frozen=True)
+class OverlaySeries:
+    series: List[SeriesDefinition]
+
+
+def _replace_variables(template: str, values: Dict[str, str]) -> str:
+    result = template
+    for key, value in values.items():
+        result = result.replace(f"{{{{{key}}}}}", value)
+        result = result.replace(f"{{{{ {key} }}}}", value)
+    return result

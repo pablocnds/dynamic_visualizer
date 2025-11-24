@@ -1,0 +1,19 @@
+# Prototype overlay card demonstrating a single chart fed by multiple files.
+# Not yet supported by the runtime; serves as documentation for the planned syntax.
+
+[global]
+pivot_chart = "{{CLASS}}"
+chart_style = ["line", "scatter"]  # Optional: array length matches filepath entries
+
+filepath = [
+  "<CARD_DIR>/../data/complex_study/{{DATASET}}/{{CLASS}}/time_series.json",
+  "<CARD_DIR>/../data/complex_study/{{DATASET}}/{{CLASS}}/scatter.json"
+]
+
+# Rules:
+# - `filepath` accepts either a string (single dataset) or an array of strings.
+# - When an array is provided, all datasets are rendered within the same chart.
+# - `chart_style` may be a single value applied to every dataset or an array matching
+#   the number of `filepath` entries.
+# - Future implementation will load both files, apply the corresponding visualization modes,
+#   and overlay them on one PyQtGraph widget.

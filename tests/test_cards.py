@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from visualizer.cards.loader import CardLoader
+from visualizer.cards.models import CardSession
 
 
 def test_load_simple_card_definition() -> None:
@@ -62,3 +63,17 @@ def test_composite_card_subcard_chart_styles() -> None:
 
     styles = {subcard.name: subcard.chart_style for subcard in definition.subcards}
     assert styles == {"time_series": None, "scatter": "scatter"}
+
+
+def test_overlay_card_definitions_and_series() -> None:
+    cards_dir = Path("examples/cards")
+    loader = CardLoader(cards_dir)
+    card_path = cards_dir / "5-overlay_card.toml"
+    definition = loader.load_definition(card_path)
+
+    assert definition.overlay_panels
+    matches = loader.resolve_paths(definition)
+    session = CardSession(definition=definition, matches=matches)
+    overlay_def = definition.overlay_panels["overlay"]
+    overlay_series = session._build_overlay_series(overlay_def, session.selection)
+    assert len(overlay_series.series) == 2

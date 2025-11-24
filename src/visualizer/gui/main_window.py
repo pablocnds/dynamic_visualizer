@@ -7,7 +7,12 @@ from PySide6 import QtCore, QtGui, QtWidgets
 import pyqtgraph as pg
 
 from visualizer.cards.loader import CardLoader
-from visualizer.cards.models import CardDefinition, CardSession, SubcardDefinition
+from visualizer.cards.models import (
+    CardDefinition,
+    CardSession,
+    SeriesDefinition,
+    SubcardDefinition,
+)
 from visualizer.data.models import Dataset
 from visualizer.data.repository import DatasetRepository
 from visualizer.interpretation.specs import DefaultInterpreter, PlotSpec, VisualizationType
@@ -34,7 +39,11 @@ class MainWindow(QtWidgets.QMainWindow):
         self._active_card_path: Optional[Path] = None
         self._panel_overrides: Dict[str, VisualizationType | None] = {}
         self._panel_plot_by_name: Dict[str, pg.PlotWidget] = {}
-        self._latest_panel_data: Dict[str, tuple[Dataset, Path, Optional[str]]] = {}
+        self._panel_title_by_name: Dict[str, QtWidgets.QLabel] = {}
+        self._latest_panel_data: Dict[
+            str, List[tuple[Optional[Dataset], Path, Optional[str]]]
+        ] = {}
+        self._panel_order: List[str] = []
 
         self._build_ui()
         self._load_initial_sources()
@@ -105,9 +114,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self._plot_stack.addWidget(self._multi_plot_container)
         self._panel_widgets: List[QtWidgets.QWidget] = []
         self._panel_plots: List[pg.PlotWidget] = []
-        self._panel_plot_by_name: Dict[str, pg.PlotWidget] = {}
-        self._panel_overrides: Dict[str, VisualizationType | None] = {}
-        self._latest_panel_data: Dict[str, tuple[Dataset, Path, Optional[str]]] = {}
 
         content_layout.addWidget(self._plot_stack, 3)
 
@@ -261,6 +267,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self._clear_variable_controls()
         self._panel_overrides.clear()
         self._panel_plot_by_name.clear()
+        self._panel_order.clear()
+        self._panel_title_by_name.clear()
         self._latest_panel_data.clear()
         self._clear_panel_widgets()
         self._plot_stack.setCurrentWidget(self._single_plot_widget)
@@ -311,18 +319,27 @@ class MainWindow(QtWidgets.QMainWindow):
         for plot in self._panel_plots:
             plot.enableAutoRange(x=True, y=True)
 
-    def _show_card_panels(
-        self, panels: List[tuple[SubcardDefinition, Dataset, Path, Optional[str]]]
+    def _build_panel_layout(
+        self,
+        panels: List[
+            tuple[
+                SubcardDefinition,
+                List[tuple[Optional[Dataset], Path, Optional[str]]],
+                List[Path],
+            ]
+        ],
     ) -> Optional[str]:
         self._plot_stack.setCurrentWidget(self._multi_plot_container)
         self._clear_panel_widgets()
         subcards = [panel[0] for panel in panels]
         stretches, warning = self._calculate_panel_stretches(subcards)
-        for (subcard, dataset, path, chart_style), stretch in zip(panels, stretches):
+        ordered_names = [panel[0].name for panel in panels]
+        for (subcard, entries, paths), stretch in zip(panels, stretches):
             panel_widget = QtWidgets.QWidget()
             panel_layout = QtWidgets.QVBoxLayout(panel_widget)
             header_layout = QtWidgets.QHBoxLayout()
-            title = QtWidgets.QLabel(self._format_panel_title(subcard, path))
+            title = QtWidgets.QLabel(self._format_panel_title(subcard, paths))
+            self._panel_title_by_name[subcard.name] = title
             header_layout.addWidget(title)
             header_layout.addStretch()
             mode_label = QtWidgets.QLabel("Mode:")
@@ -336,9 +353,28 @@ class MainWindow(QtWidgets.QMainWindow):
             self._panel_widgets.append(panel_widget)
             self._panel_plots.append(plot_widget)
             self._panel_plot_by_name[subcard.name] = plot_widget
-            self._latest_panel_data[subcard.name] = (dataset, path, chart_style)
-            override = self._panel_overrides.get(subcard.name)
-            self._draw_plot(plot_widget, dataset, path, chart_style, panel_override=override)
+            self._latest_panel_data[subcard.name] = entries
+            self._rerender_panel(subcard.name)
+        self._panel_order = ordered_names
+        return warning
+
+    def _update_existing_panels(
+        self,
+        panels: List[
+            tuple[
+                SubcardDefinition,
+                List[tuple[Optional[Dataset], Path, Optional[str]]],
+                List[Path],
+            ]
+        ],
+    ) -> Optional[str]:
+        warning = None
+        for subcard, entries, paths in panels:
+            title = self._panel_title_by_name.get(subcard.name)
+            if title:
+                title.setText(self._format_panel_title(subcard, paths))
+            self._latest_panel_data[subcard.name] = entries
+            self._rerender_panel(subcard.name)
         return warning
 
     def _calculate_panel_stretches(
@@ -364,9 +400,13 @@ class MainWindow(QtWidgets.QMainWindow):
             stretches = [1 for _ in subcards]
         return stretches, warning
 
-    def _format_panel_title(self, subcard: SubcardDefinition, path: Path) -> str:
+    def _format_panel_title(self, subcard: SubcardDefinition, paths: List[Path]) -> str:
         friendly = subcard.name.replace("_", " ").title()
-        return f"{friendly} – {path.name}"
+        if not paths:
+            return f"{friendly} – (no data)"
+        if len(paths) == 1:
+            return f"{friendly} – {paths[0].name}"
+        return f"{friendly} – {paths[0].name} (+{len(paths) - 1} more)"
 
     def _create_panel_style_combo(self, subcard_name: str) -> QtWidgets.QComboBox:
         combo = QtWidgets.QComboBox()
@@ -412,9 +452,22 @@ class MainWindow(QtWidgets.QMainWindow):
         data = self._latest_panel_data.get(subcard_name)
         if not plot or not data:
             return
-        dataset, path, default_style = data
         override = self._panel_overrides.get(subcard_name)
-        self._draw_plot(plot, dataset, path, default_style, panel_override=override)
+        specs = []
+        for dataset, path, default_style in data:
+            if dataset is None:
+                continue
+            viz = self._resolve_visualization_override(
+                card_style=default_style,
+                panel_override=override,
+            )
+            specs.append(self._interpreter.build_plot_spec(dataset, override=viz))
+        if not specs:
+            plot.clear()
+        elif len(specs) == 1:
+            self._renderer.render(plot, specs[0])
+        else:
+            self._renderer.render_multiple(plot, specs)
 
     def _clear_panel_widgets(self) -> None:
         while self._multi_plot_layout.count():
@@ -427,6 +480,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self._panel_widgets.clear()
         self._panel_plots.clear()
         self._panel_plot_by_name.clear()
+        self._panel_title_by_name.clear()
+        self._panel_order.clear()
         self._latest_panel_data.clear()
 
     def _populate_variable_controls(self) -> None:
@@ -505,31 +560,64 @@ class MainWindow(QtWidgets.QMainWindow):
             self._status_label.setText(f"Card error: {exc}")
             return
 
-        panels = []
+        panels: List[
+            tuple[
+                SubcardDefinition,
+                List[tuple[Optional[Dataset], Path, Optional[str]]],
+                List[Path],
+            ]
+        ] = []
         missing: List[str] = []
+
         for subcard in self._card_session.definition.subcards:
             match = match_map.get(subcard.name)
+            entries: List[tuple[Optional[Dataset], Path, Optional[str]]] = []
+            panel_paths: List[Path] = []
             if not match:
                 missing.append(subcard.name)
+                panels.append((subcard, entries, panel_paths))
                 continue
-            try:
-                dataset = self._repository.load(match.path)
-            except Exception as exc:  # pragma: no cover - GUI feedback
-                missing.append(f"{subcard.name} ({exc})")
-                continue
-            chart_style = subcard.chart_style or self._card_session.definition.chart_style
-            panels.append((subcard, dataset, match.path, chart_style))
+
+            overlay_def = self._card_session.definition.overlay_panels.get(subcard.name)
+            if overlay_def:
+                overlay_series = self._card_session._build_overlay_series(
+                    overlay_def, match.variables
+                )
+                series_list = overlay_series.series
+            else:
+                series_list = [
+                    SeriesDefinition(
+                        path=match.path,
+                        chart_style=subcard.chart_style or self._card_session.definition.chart_style,
+                    )
+                ]
+
+            for series_def in series_list:
+                panel_paths.append(series_def.path)
+                try:
+                    dataset = self._repository.load(series_def.path)
+                except Exception as exc:  # pragma: no cover - GUI feedback
+                    missing.append(f"{series_def.path.name} ({exc})")
+                    entries.append((None, series_def.path, series_def.chart_style))
+                    continue
+                entries.append((dataset, series_def.path, series_def.chart_style))
+
+            panels.append((subcard, entries, panel_paths))
 
         if not panels:
             self._status_label.setText("Card selection has no matching datasets.")
             return
 
-        active_names = {subcard.name for subcard, _, _, _ in panels}
+        active_names = {subcard.name for subcard, _, _ in panels}
         for name in list(self._panel_overrides.keys()):
             if name not in active_names:
                 self._panel_overrides.pop(name, None)
 
-        warning = self._show_card_panels(panels)
+        panel_names = [subcard.name for subcard, _, _ in panels]
+        if panel_names != self._panel_order:
+            warning = self._build_panel_layout(panels)
+        else:
+            warning = self._update_existing_panels(panels)
         selection_text = ", ".join(
             f"{var}={value}" for var, value in sorted(self._card_session.selection.items())
         )

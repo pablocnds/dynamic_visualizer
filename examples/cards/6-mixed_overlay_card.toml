@@ -1,0 +1,27 @@
+# Card covering overlay + subcards simultaneously.
+# Top panel overlays time series + scatter; the two bottom panels render simple line charts
+# with explicit chart_height and chart_style overrides. Reuses existing sample files.
+
+[global]
+pivot_chart = "{{CLASS}}"
+chart_style = "line"
+
+# Overlay panel at the top (default height 40%) combining two datasets.
+[subcards.overlay_panel]
+chart_height = "40%"
+filepath = [
+  "<CARD_DIR>/../data/complex_study/{{DATASET}}/{{CLASS}}/time_series.json",
+  "<CARD_DIR>/../data/complex_study/{{DATASET}}/{{CLASS}}/scatter.json"
+]
+chart_style = ["line", "scatter"]
+
+# Second panel: plain time series line chart.
+[subcards.dataset_line]
+chart_height = "30%"
+chart_style = "line"
+filepath = "<CARD_DIR>/../data/complex_study/{{DATASET}}/{{CLASS}}/time_series.json"
+
+# Third panel: scatter reused with explicit chart style override.
+[subcards.dataset_scatter]
+chart_style = "scatter"
+filepath = "<CARD_DIR>/../data/complex_study/{{DATASET}}/{{CLASS}}/scatter.json"

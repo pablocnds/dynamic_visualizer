@@ -23,6 +23,7 @@ class VisualizationType(str, Enum):
 @dataclass(frozen=True)
 class PlotSpec:
     dataset_id: str
+    label: str | None
     x: Sequence[float | str]
     y: Sequence[float]
     x_label: str | None
@@ -32,6 +33,7 @@ class PlotSpec:
     def cache_key(self) -> tuple:
         return (
             self.dataset_id,
+            self.label,
             tuple(self.x),
             tuple(self.y),
             self.x_label,
@@ -47,6 +49,7 @@ class DefaultInterpreter:
         self,
         dataset: Dataset,
         override: VisualizationType | None = None,
+        label: str | None = None,
     ) -> PlotSpec:
         visualization = override or self._infer_visualization(dataset)
         x_values = list(dataset.x)
@@ -60,6 +63,7 @@ class DefaultInterpreter:
 
         return PlotSpec(
             dataset_id=dataset.identifier,
+            label=label or dataset.identifier,
             x=x_values,
             y=y_values,
             x_label=dataset.x_label or "X Axis",

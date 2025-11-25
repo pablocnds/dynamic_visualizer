@@ -160,8 +160,11 @@ class CardSession:
         styles = [
             style if style is not None else self.definition.chart_style for style in styles
         ]
+        labels = overlay_def.overlay_labels or [None] * len(overlay_def.filepaths)
+        if len(labels) < len(overlay_def.filepaths):
+            labels = labels + [labels[-1]] * (len(overlay_def.filepaths) - len(labels))
         card_dir = str(self.definition.path.parent)
-        for path_str, style in zip(overlay_def.filepaths, styles):
+        for path_str, style, series_label in zip(overlay_def.filepaths, styles, labels):
             template = path_str.replace("<CARD_DIR>", card_dir)
             overlay_var = overlay_def.overlay_variable
             if overlay_var:
@@ -170,12 +173,25 @@ class CardSession:
                     overlay_var,
                     variables,
                     overlay_def.overlay_filter,
+                    overlay_def.overlay_path_filter,
                 )
                 for path in expanded_paths:
-                    series_defs.append(SeriesDefinition(path=path, chart_style=style))
+                    series_defs.append(
+                        SeriesDefinition(
+                            path=path,
+                            chart_style=style,
+                            label=series_label or path.stem,
+                        )
+                    )
             else:
                 replaced = _replace_variables(template, variables)
-                series_defs.append(SeriesDefinition(path=Path(replaced), chart_style=style))
+                series_defs.append(
+                    SeriesDefinition(
+                        path=Path(replaced),
+                        chart_style=style,
+                        label=series_label or Path(replaced).stem,
+                    )
+                )
         return OverlaySeries(series=series_defs)
 
 
@@ -186,12 +202,15 @@ class OverlayDefinition:
     chart_styles: List[Optional[str]]
     overlay_variable: Optional[str] = None
     overlay_filter: Optional[str] = None
+    overlay_labels: Optional[List[Optional[str]]] = None
+    overlay_path_filter: Optional[str] = None
 
 
 @dataclass(frozen=True)
 class SeriesDefinition:
     path: Path
     chart_style: Optional[str]
+    label: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -263,14 +282,18 @@ def _enumerate_overlay_paths(
     overlay_variable: str,
     values: Dict[str, str],
     overlay_filter: str | None = None,
+    overlay_path_filter: str | None = None,
 ) -> List[Path]:
     replaced = _replace_variables(template, values)
     glob_pattern = _template_to_glob(replaced)
     regex, alias_map = _template_to_regex(replaced)
     paths: List[Path] = []
     compiled_filter = re.compile(overlay_filter) if overlay_filter else None
+    compiled_path_filter = re.compile(overlay_path_filter) if overlay_path_filter else None
     for match in glob.glob(glob_pattern):
         normalized = os.path.normpath(match)
+        if compiled_path_filter and not compiled_path_filter.search(normalized):
+            continue
         match_obj = regex.match(normalized)
         if not match_obj:
             continue

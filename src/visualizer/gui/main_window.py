@@ -44,7 +44,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._panel_plot_by_name: Dict[str, pg.PlotWidget] = {}
         self._panel_title_by_name: Dict[str, QtWidgets.QLabel] = {}
         self._latest_panel_data: Dict[
-            str, List[tuple[Optional[Dataset], Path, Optional[str]]]
+            str, List[tuple[Optional[Dataset], Path, Optional[str], Optional[str]]]
         ] = {}
         self._panel_order: List[str] = []
         self._data_dir_label: Optional[QtWidgets.QLabel] = None
@@ -447,7 +447,7 @@ class MainWindow(QtWidgets.QMainWindow):
         panels: List[
             tuple[
                 SubcardDefinition,
-                List[tuple[Optional[Dataset], Path, Optional[str]]],
+                List[tuple[Optional[Dataset], Path, Optional[str], Optional[str]]],
                 List[Path],
             ]
         ],
@@ -486,7 +486,7 @@ class MainWindow(QtWidgets.QMainWindow):
         panels: List[
             tuple[
                 SubcardDefinition,
-                List[tuple[Optional[Dataset], Path, Optional[str]]],
+                List[tuple[Optional[Dataset], Path, Optional[str], Optional[str]]],
                 List[Path],
             ]
         ],
@@ -577,14 +577,20 @@ class MainWindow(QtWidgets.QMainWindow):
             return
         override = self._panel_overrides.get(subcard_name)
         specs = []
-        for dataset, path, default_style in data:
+        for dataset, path, default_style, label in data:
             if dataset is None:
                 continue
             viz = self._resolve_visualization_override(
                 card_style=default_style,
                 panel_override=override,
             )
-            specs.append(self._interpreter.build_plot_spec(dataset, override=viz))
+            specs.append(
+                self._interpreter.build_plot_spec(
+                    dataset,
+                    override=viz,
+                    label=label,
+                )
+            )
         if not specs:
             plot.clear()
         elif len(specs) == 1:
@@ -690,7 +696,7 @@ class MainWindow(QtWidgets.QMainWindow):
         panels: List[
             tuple[
                 SubcardDefinition,
-                List[tuple[Optional[Dataset], Path, Optional[str]]],
+                List[tuple[Optional[Dataset], Path, Optional[str], Optional[str]]],
                 List[Path],
             ]
         ] = []
@@ -698,7 +704,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         for subcard in self._card_session.definition.subcards:
             match = match_map.get(subcard.name)
-            entries: List[tuple[Optional[Dataset], Path, Optional[str]]] = []
+            entries: List[tuple[Optional[Dataset], Path, Optional[str], Optional[str]]] = []
             panel_paths: List[Path] = []
             if not match:
                 missing.append(subcard.name)
@@ -725,9 +731,9 @@ class MainWindow(QtWidgets.QMainWindow):
                     dataset = self._repository.load(series_def.path)
                 except Exception as exc:  # pragma: no cover - GUI feedback
                     missing.append(f"{series_def.path.name} ({exc})")
-                    entries.append((None, series_def.path, series_def.chart_style))
+                    entries.append((None, series_def.path, series_def.chart_style, series_def.label))
                     continue
-                entries.append((dataset, series_def.path, series_def.chart_style))
+                entries.append((dataset, series_def.path, series_def.chart_style, series_def.label))
 
             panels.append((subcard, entries, panel_paths))
 

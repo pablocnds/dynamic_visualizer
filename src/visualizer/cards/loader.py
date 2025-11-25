@@ -63,6 +63,8 @@ class CardLoader:
                         ),
                         overlay_variable=overlay_var,
                         overlay_filter=_normalize_variable(config.get("overlay_filter")),
+                        overlay_labels=_normalize_label_list(config.get("series_label"), len(filepaths)),
+                        overlay_path_filter=_normalize_variable(config.get("overlay_path_filter")),
                     )
                     template = filepaths[0]
                 else:
@@ -104,6 +106,8 @@ class CardLoader:
                     chart_styles=_normalize_style_list(chart_style, len(filepaths)),
                     overlay_variable=overlay_var,
                     overlay_filter=_normalize_variable(data.get("overlay_filter")),
+                    overlay_labels=_normalize_label_list(data.get("series_label"), len(filepaths)),
+                    overlay_path_filter=_normalize_variable(data.get("overlay_path_filter")),
                 )
                 template = match_template
                 subcards.append(
@@ -321,3 +325,14 @@ def _collect_variables(filepaths: List[str]) -> Tuple[str, ...]:
     for path in filepaths:
         vars_set.update(_extract_variables(path))
     return tuple(sorted(vars_set))
+
+
+def _normalize_label_list(value: object | None, expected: int) -> List[Optional[str]]:
+    if value is None:
+        return [None] * expected
+    if isinstance(value, list):
+        labels = [str(item) if item is not None else None for item in value]
+        if len(labels) < expected:
+            labels += [labels[-1] if labels else None] * (expected - len(labels))
+        return labels
+    return [str(value)] * expected

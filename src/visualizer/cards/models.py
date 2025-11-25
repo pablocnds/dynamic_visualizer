@@ -150,9 +150,12 @@ class CardSession:
         series_defs: List[SeriesDefinition] = []
         styles = overlay_def.chart_styles
         if not styles:
-            styles = [None] * len(overlay_def.filepaths)
+            styles = [self.definition.chart_style] * len(overlay_def.filepaths)
         elif len(styles) < len(overlay_def.filepaths):
             styles = styles + [styles[-1]] * (len(overlay_def.filepaths) - len(styles))
+        styles = [
+            style if style is not None else self.definition.chart_style for style in styles
+        ]
         card_dir = str(self.definition.path.parent)
         for path_str, style in zip(overlay_def.filepaths, styles):
             template = path_str.replace("<CARD_DIR>", card_dir)

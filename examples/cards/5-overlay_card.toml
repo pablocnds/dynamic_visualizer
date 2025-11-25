@@ -1,5 +1,4 @@
 # Prototype overlay card demonstrating a single chart fed by multiple files.
-# Not yet supported by the runtime; serves as documentation for the planned syntax.
 
 [global]
 pivot_chart = "{{CLASS}}"

@@ -1,7 +1,15 @@
 from pathlib import Path
 
+import pytest
+
 from visualizer.cards.loader import CardLoader
-from visualizer.cards.models import CardSession
+from visualizer.cards.models import (
+    CardDefinition,
+    CardMatch,
+    CardSession,
+    OverlayDefinition,
+    SubcardDefinition,
+)
 
 
 def test_load_simple_card_definition() -> None:
@@ -77,3 +85,53 @@ def test_overlay_card_definitions_and_series() -> None:
     overlay_def = definition.overlay_panels["overlay"]
     overlay_series = session._build_overlay_series(overlay_def, session.selection)
     assert len(overlay_series.series) == 2
+
+
+def test_cards_with_multiple_variables_require_pivot(tmp_path: Path) -> None:
+    cards_dir = tmp_path
+    cards_dir.mkdir(parents=True, exist_ok=True)
+    card_path = cards_dir / "missing_pivot.toml"
+    card_path.write_text(
+        """
+filepath = "<CARD_DIR>/../data/complex_study/{{DATASET}}/{{CLASS}}/time_series.json"
+"""
+    )
+    loader = CardLoader(cards_dir)
+
+    with pytest.raises(ValueError):
+        loader.load_definition(card_path)
+
+
+def test_overlay_series_falls_back_to_global_style() -> None:
+    definition = CardDefinition(
+        path=Path("dummy"),
+        subcards=(
+            SubcardDefinition(
+                name="overlay",
+                filepath_template="dummy",
+                variables=(),
+                filepaths=["/tmp/a.json", "/tmp/b.json"],
+                chart_style=None,
+                chart_height=None,
+            ),
+        ),
+        variables=(),
+        chart_style="line",
+        pivot_variable=None,
+        overlay_panels={
+            "overlay": OverlayDefinition(
+                name="overlay",
+                filepaths=["/tmp/a.json", "/tmp/b.json"],
+                chart_styles=[None, None],
+            )
+        },
+    )
+    session = CardSession(
+        definition=definition,
+        matches={"overlay": [CardMatch(path=Path("/tmp/a.json"), variables={})]},
+    )
+
+    overlay_def = definition.overlay_panels["overlay"]
+    series = session._build_overlay_series(overlay_def, session.selection).series
+
+    assert [entry.chart_style for entry in series] == ["line", "line"]

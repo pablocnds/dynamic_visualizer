@@ -100,6 +100,8 @@ class CardLoader:
             raise ValueError(
                 f"Pivot variable '{normalized_pivot}' is not present in the filepath template"
             )
+        if len(all_variables) > 1 and not normalized_pivot:
+            raise ValueError("Cards with multiple variables must define 'pivot_chart'")
 
         return CardDefinition(
             path=path,

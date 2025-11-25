@@ -20,7 +20,7 @@ from visualizer.viz.renderer import PlotRenderer
 
 
 class MainWindow(QtWidgets.QMainWindow):
-    def __init__(self, data_dir: Path, cards_dir: Path | None = None) -> None:
+    def __init__(self, data_dir: Path | None, cards_dir: Path | None = None) -> None:
         super().__init__()
         self.setWindowTitle("Dynamic Visualizer")
         self.resize(1200, 800)
@@ -44,6 +44,7 @@ class MainWindow(QtWidgets.QMainWindow):
             str, List[tuple[Optional[Dataset], Path, Optional[str]]]
         ] = {}
         self._panel_order: List[str] = []
+        self._data_dir_label: Optional[QtWidgets.QLabel] = None
 
         self._build_ui()
         self._load_initial_sources()
@@ -61,6 +62,13 @@ class MainWindow(QtWidgets.QMainWindow):
         controls_widget.setFixedWidth(320)
         controls_layout = QtWidgets.QVBoxLayout(controls_widget)
         content_layout.addWidget(controls_widget)
+
+        controls_layout.addWidget(QtWidgets.QLabel("Data Folder"))
+        self._data_dir_label = QtWidgets.QLabel("No folder selected")
+        controls_layout.addWidget(self._data_dir_label)
+        choose_folder_button = QtWidgets.QPushButton("Choose Data Folder…")
+        choose_folder_button.clicked.connect(self._handle_choose_folder)
+        controls_layout.addWidget(choose_folder_button)
 
         self._file_list = QtWidgets.QListWidget()
         self._file_list.itemSelectionChanged.connect(self._handle_file_selection)
@@ -126,10 +134,11 @@ class MainWindow(QtWidgets.QMainWindow):
         self._update_navigation_buttons()
 
     def _load_initial_sources(self) -> None:
-        files = self._repository.list_datasets(self._data_dir)
-        for file_path in files:
-            self._add_file_to_list(file_path)
         self._load_cards()
+        if self._data_dir:
+            self._refresh_file_list()
+        else:
+            self._status_label.setText("Choose a data folder or add files to begin.")
 
     def _add_file_to_list(self, path: Path) -> None:
         for index in range(self._file_list.count()):
@@ -139,6 +148,17 @@ class MainWindow(QtWidgets.QMainWindow):
         item = QtWidgets.QListWidgetItem(path.name)
         item.setData(QtCore.Qt.UserRole, path)
         self._file_list.addItem(item)
+
+    def _refresh_file_list(self) -> None:
+        self._file_list.clear()
+        if not self._data_dir:
+            if self._data_dir_label:
+                self._data_dir_label.setText("No folder selected")
+            return
+        if self._data_dir_label:
+            self._data_dir_label.setText(str(self._data_dir))
+        for file_path in self._repository.list_datasets(self._data_dir):
+            self._add_file_to_list(file_path)
 
     def _handle_add_file(self) -> None:
         dialog = QtWidgets.QFileDialog(self)
@@ -153,6 +173,18 @@ class MainWindow(QtWidgets.QMainWindow):
             if selected_files:
                 path = Path(selected_files[0])
                 self._add_file_to_list(path)
+                self._status_label.setText(f"Added {path.name}")
+
+    def _handle_choose_folder(self) -> None:
+        dialog = QtWidgets.QFileDialog(self)
+        dialog.setFileMode(QtWidgets.QFileDialog.Directory)
+        dialog.setOption(QtWidgets.QFileDialog.ShowDirsOnly, True)
+        if dialog.exec():
+            folders = dialog.selectedFiles()
+            if folders:
+                self._data_dir = Path(folders[0])
+                self._refresh_file_list()
+                self._status_label.setText(f"Loaded folder {self._data_dir}")
 
     def _handle_file_selection(self) -> None:
         selected_items = self._file_list.selectedItems()

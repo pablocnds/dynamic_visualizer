@@ -1,86 +1,71 @@
 # Card Specification
 
-This document defines the configuration format for visualization cards. It is a living reference and must be revised whenever the format evolves.
+TOML cards describe where to find datasets and how to render them. Variables are single path components discovered automatically so users can cycle through data without manual file picking.
 
-## Goals
-- Describe datasets without coding so the GUI can discover files, infer variables, and render plots with minimal user action.
-- Enforce "convention over configuration" by auto-populating variables (no manual selection) and providing sensible defaults for chart styles/layouts.
-- Support progressive complexity: single-series cards, multi-variable switching, multi-panel comparisons, composite dashboards.
-
-> **Implementation status:** current build supports simple wildcard cards, single-file cards with automatically discovered variables (e.g., Dataset + Class) plus pivot-based cycling, and multi-pane cards with subcards (e.g., comparison/composite cards). Future sections describe additional capabilities (boolean maps, advanced layouts) that are not yet implemented.
-
-## Common Concepts
-- **Card file root (`<CARD_DIR>`)**: placeholder for the directory where the card resides. Paths are resolved relative to it.
-- **Data root**: Cards are expected to reference files under a controlled `data/` hierarchy. Discovery only walks directories referenced by a card to avoid deep scans.
-- **Variables (`{{VAR}}`)**: placeholders that resolve automatically by inspecting directory names or file stems. They always map to a single directory or filename component (no multi-level expansion) and default to the alphabetical first match. Cycling through views changes only the variable identified by `pivot_chart`.
-- **Wildcard (`*`)**: shorthand for a single anonymous variable when no other variables exist (same semantics as `{{VAR}}`).
-- **Pivot**: `pivot_chart = {{VAR_NAME}}` identifies which variable changes when the user advances to the next visualization.
-- **Chart style**: default visualization type (`line`, `scatter`, `boolean_map`, etc.). Subcards inherit this unless overridden.
-
-## Autodiscovery Rules
-1. Parse the `filepath` template and list the directory levels that contain variables.
-2. For each variable appearance, enumerate directories/files that match the surrounding pattern, caching the results per card.
-3. Default selection is the alphabetically first result. Cycling follows alphabetical order.
-4. Wildcards behave like unnamed variables following the same enumeration rules.
-5. Discovery guards: stop recursion at the expected depth (only inspect directories where the template specifies a variable), and fail with a warning if enumeration exceeds internal limits (e.g., >1000 entries or >2 seconds per level).
-
-## Filepath Field
-```
-filepath = "<CARD_DIR>/data/simple_study/*"
-filepath = "<CARD_DIR>/data/complex/{{DATASET}}/{{CLASS}}/time_series.json"
-```
-- Required for each card or subcard.
-- Must evaluate to at least one existing file (JSON/CSV) for the card to load.
-- If multiple matches exist, the card cycles through them according to `pivot_chart`.
+## Core Concepts
+- `<CARD_DIR>`: directory containing the card; paths are resolved relative to it.
+- Variables: `{{VAR}}` or `*` (wildcard). They replace exactly one directory or filename segment and default to the first alphabetical value.
+- Pivot: `pivot_chart = "{{VAR}}"` identifies which variable cycles when moving prev/next.
+- Styles: `chart_style` accepts `line` or `scatter` today. Subcards and overlays may override it; missing overrides fall back to the card’s global style.
 
 ## Global Section (optional)
-```
+```toml
 [global]
 chart_style = "line"
-pivot_chart = "{{CLASS}}"
+pivot_chart = "{{CLASS}}"  # required when >1 variable; optional for a single variable/wildcard
 ```
-- `chart_style`: default visualization applied to the card (string). Subcards inherit unless they define their own.
-- `pivot_chart`: identifies the variable used for cycling. Required when at least one variable exists. Only one variable should be designated. Always wrap the placeholder in quotes so the file remains valid TOML.
-- Additional future settings (e.g., themes) will be documented here.
 
-## Subcards
-Subcards define multiple panes within a single card.
+## Simple Card
+```toml
+filepath = "<CARD_DIR>/../data/simple_study/*"
+chart_style = "line"
 ```
-[subcards.dataset1]
-filepath = "<CARD_DIR>/data/..."
-chart_height = "50%"
-chart_style = "scatter"  # optional override
+Wildcard cards do not require `pivot_chart`.
+
+## Multi-Variable Card
+```toml
+filepath = "<CARD_DIR>/../data/complex_study/{{DATASET}}/{{CLASS}}/time_series.json"
+pivot_chart = "{{CLASS}}"  # required because two variables exist
+chart_style = "line"
 ```
-- Inherit `chart_style`, `pivot_chart`, and other global defaults unless overridden.
-- `chart_height`: optional percentage (string with `%`). Missing values are assigned from remaining height equally. If the sum exceeds 100%, the loader clamps and surfaces a validation error in the GUI.
-- `chart_style`: optional visualization override for that panel (e.g., time series = line, scatter = scatter). When omitted, the subcard inherits `global.chart_style`.
-- Missing files per subcard: if a filepath resolves to zero matches, that panel is skipped while others render.
+
+## Subcards / Composites
+```toml
+[global]
+pivot_chart = "{{CLASS}}"
+chart_style = "line"
+
+[subcards.time_series]
+chart_height = "40%"        # remaining height is split across unspecified panels
+filepath = "<CARD_DIR>/../data/.../{{DATASET}}/{{CLASS}}/time_series.json"
+
+[subcards.scatter]
+chart_style = "scatter"
+filepath = "<CARD_DIR>/../data/.../{{DATASET}}/{{CLASS}}/scatter.json"
+```
 
 ## Overlays
-- **Status:** Implemented (cards may specify arrays for `filepath`/`chart_style` to render multiple datasets in a single chart).
-- Configuration:
-  ```toml
-  filepath = [
-    "<CARD_DIR>/data/.../time_series.json",
-    "<CARD_DIR>/data/.../scatter.json"
-  ]
-  chart_style = ["line", "scatter"]  # or a single value applied to every entry
-  ```
-- Behavior:
-  - `filepath` accepts either a string (current behavior) or an array of paths. When an array is provided, each dataset is loaded and drawn within the same chart.
-  - `chart_style` may be a single value (applied to all datasets) or an array whose length matches the number of file paths.
-  - Runtime should pair each path with a chart style (falling back to the global default when fewer styles than paths are provided) and render them together via PyQtGraph.
+```toml
+[global]
+chart_style = "line"        # used when per-series style is omitted
+
+filepath = [
+  "<CARD_DIR>/../data/.../{{DATASET}}/{{CLASS}}/time_series.json",
+  "<CARD_DIR>/../data/.../{{DATASET}}/{{CLASS}}/scatter.json"
+]
+chart_style = ["line", "scatter"]  # or a single value applied to all paths
+```
+When `chart_style` entries are missing/shorter than `filepath`, remaining series use the card’s global style.
+
+## Discovery Rules
+1. Convert each template to a glob and regex; enumerate matches up to internal limits.
+2. Variables are single-level only; recursion is constrained to the positions variables occupy, not arbitrary depth.
+3. Default selections use alphabetical order; cycling advances only the pivot variable.
+4. If a card defines multiple variables without `pivot_chart`, it is rejected.
+5. Each subcard must resolve to existing files; overlays load every path listed in their array.
 
 ## Validation
-- Cards must validate against a TOML schema (to be finalized). Validation covers required keys, allowed chart styles, numeric formats, and layout constraints.
-- Loader should surface actionable errors (missing files, invalid variables, conflicting heights) without crashing the app.
-
-## Rendering Behavior
-- When a card is active, the GUI replaces variables according to the current selection, loads each resolved file, and displays the plots based on `chart_style` (with per-panel overrides).
-- Subcards render top-to-bottom respecting `chart_height` percentages.
-- Missing data for composite cards: render available panels and note missing data in the status area.
-
-## Future Considerations
-- Formal JSON schema (converted from TOML) for tooling/tests.
-- Support for additional visualization types (heatmaps, boolean grids) and per-series styling metadata.
-- Caching of resolved variable combinations to accelerate switching across large data directories.
+- Required fields: a top-level `filepath` **or** a `[subcards]` section.
+- `chart_height` accepts percentages; totals above 100% are clamped with a warning.
+- `chart_style` must be recognized; per-series lists may be shorter than `filepath` arrays and will be extended using the last value/global style.
+- Missing or mismatched variables in `pivot_chart` cause errors.

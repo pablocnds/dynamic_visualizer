@@ -27,6 +27,7 @@ class CardDefinition:
     chart_style: Optional[str] = None
     pivot_variable: Optional[str] = None
     overlay_panels: Dict[str, "OverlayDefinition"] = field(default_factory=dict)
+    variable_filters: Dict[str, str] = field(default_factory=dict)
 
     def has_subcards(self) -> bool:
         return bool(self.subcards)
@@ -167,13 +168,13 @@ class CardSession:
         for path_str, style, series_label in zip(overlay_def.filepaths, styles, labels):
             template = path_str.replace("<CARD_DIR>", card_dir)
             overlay_var = overlay_def.overlay_variable
-            if overlay_var:
+            if overlay_var and f"{{{{{overlay_var}}}}}" in template:
                 expanded_paths = _enumerate_overlay_paths(
                     template,
                     overlay_var,
                     variables,
-                    overlay_def.overlay_filter,
                     overlay_def.overlay_path_filter,
+                    self.definition.variable_filters,
                 )
                 for path in expanded_paths:
                     series_defs.append(
@@ -185,11 +186,14 @@ class CardSession:
                     )
             else:
                 replaced = _replace_variables(template, variables)
+                expanded = _expand_wildcard_paths(replaced)
+                if not expanded:
+                    continue
                 series_defs.append(
                     SeriesDefinition(
-                        path=Path(replaced),
+                        path=expanded,
                         chart_style=style,
-                        label=series_label or Path(replaced).stem,
+                        label=series_label or expanded.stem,
                     )
                 )
         return OverlaySeries(series=series_defs)
@@ -201,7 +205,6 @@ class OverlayDefinition:
     filepaths: List[str]
     chart_styles: List[Optional[str]]
     overlay_variable: Optional[str] = None
-    overlay_filter: Optional[str] = None
     overlay_labels: Optional[List[Optional[str]]] = None
     overlay_path_filter: Optional[str] = None
 
@@ -224,6 +227,17 @@ def _replace_variables(template: str, values: Dict[str, str]) -> str:
         result = result.replace(f"{{{{{key}}}}}", value)
         result = result.replace(f"{{{{ {key} }}}}", value)
     return result
+
+
+def _expand_wildcard_paths(path_template: str) -> Path | None:
+    if "*" not in path_template and "?" not in path_template:
+        return Path(path_template)
+    matches = sorted(Path(p) for p in glob.glob(path_template))
+    if not matches:
+        return None
+    if len(matches) > 1:
+        raise ValueError(f"Wildcard path matched multiple files: {path_template}")
+    return matches[0]
 
 
 def _template_to_glob(template: str) -> str:
@@ -281,14 +295,14 @@ def _enumerate_overlay_paths(
     template: str,
     overlay_variable: str,
     values: Dict[str, str],
-    overlay_filter: str | None = None,
     overlay_path_filter: str | None = None,
+    variable_filters: Dict[str, str] | None = None,
 ) -> List[Path]:
     replaced = _replace_variables(template, values)
     glob_pattern = _template_to_glob(replaced)
     regex, alias_map = _template_to_regex(replaced)
     paths: List[Path] = []
-    compiled_filter = re.compile(overlay_filter) if overlay_filter else None
+    filters = {k: re.compile(v) for k, v in (variable_filters or {}).items()}
     compiled_path_filter = re.compile(overlay_path_filter) if overlay_path_filter else None
     for match in glob.glob(glob_pattern):
         normalized = os.path.normpath(match)
@@ -300,8 +314,17 @@ def _enumerate_overlay_paths(
         var_value = match_obj.groupdict().get(overlay_variable) or match_obj.groupdict().get(
             alias_map.get(overlay_variable, "")
         )
-        if compiled_filter and var_value is not None:
-            if not compiled_filter.match(var_value):
+        overlay_filter = filters.get(overlay_variable)
+        if overlay_filter:
+            target = var_value if var_value is not None else Path(normalized).stem
+            if not overlay_filter.fullmatch(target):
                 continue
-        paths.append(Path(normalized))
+        for var_name, var_pattern in filters.items():
+            captured = match_obj.groupdict().get(var_name)
+            if captured is None:
+                continue
+            if not var_pattern.fullmatch(captured):
+                break
+        else:
+            paths.append(Path(normalized))
     return sorted(paths)

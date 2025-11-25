@@ -28,7 +28,11 @@ class CardLoader:
         with path.open("rb") as handle:
             data = tomllib.load(handle)
         global_section = data.get("global", {})
-        filepath_template = data.get("filepath") or global_section.get("filepath")
+        filepath_template = (
+            data.get("filepath")
+            or global_section.get("filepath")
+            or data.get("card", {}).get("filepath")
+        )
         chart_style = data.get("chart_style") or global_section.get("chart_style")
         pivot = data.get("pivot_chart") or global_section.get("pivot_chart")
         subcards_section = data.get("subcards") or {}
@@ -36,6 +40,7 @@ class CardLoader:
         subcards: List[SubcardDefinition] = []
         overlay_panels: Dict[str, OverlayDefinition] = {}
         overlay_var_global = _normalize_variable(global_section.get("overlay_variable"))
+        variable_filters = _normalize_filter_map(data.get("variable_filters", {}))
         if subcards_section:
             for name, config in subcards_section.items():
                 template = config.get("filepath")
@@ -55,17 +60,16 @@ class CardLoader:
                         if any(var != overlay_var for var in vars_in_candidate):
                             match_template = candidate
                             break
-                    overlay_panels[name] = OverlayDefinition(
-                        name=name,
-                        filepaths=filepaths,
-                        chart_styles=_normalize_style_list(
-                            config.get("chart_style"), len(filepaths)
-                        ),
-                        overlay_variable=overlay_var,
-                        overlay_filter=_normalize_variable(config.get("overlay_filter")),
-                        overlay_labels=_normalize_label_list(config.get("series_label"), len(filepaths)),
-                        overlay_path_filter=_normalize_variable(config.get("overlay_path_filter")),
-                    )
+                        overlay_panels[name] = OverlayDefinition(
+                            name=name,
+                            filepaths=filepaths,
+                            chart_styles=_normalize_style_list(
+                                config.get("chart_style"), len(filepaths)
+                            ),
+                            overlay_variable=overlay_var,
+                            overlay_labels=_normalize_label_list(config.get("series_label"), len(filepaths)),
+                            overlay_path_filter=_normalize_variable(config.get("overlay_path_filter")),
+                        )
                     template = filepaths[0]
                 else:
                     filepaths = [_ensure_string(template)]
@@ -105,7 +109,6 @@ class CardLoader:
                     filepaths=filepaths,
                     chart_styles=_normalize_style_list(chart_style, len(filepaths)),
                     overlay_variable=overlay_var,
-                    overlay_filter=_normalize_variable(data.get("overlay_filter")),
                     overlay_labels=_normalize_label_list(data.get("series_label"), len(filepaths)),
                     overlay_path_filter=_normalize_variable(data.get("overlay_path_filter")),
                 )
@@ -151,6 +154,7 @@ class CardLoader:
             chart_style=str(chart_style) if chart_style else None,
             pivot_variable=normalized_pivot,
             overlay_panels=overlay_panels,
+            variable_filters=variable_filters,
         )
 
     def resolve_paths(self, definition: CardDefinition) -> Dict[str, List[CardMatch]]:
@@ -336,3 +340,11 @@ def _normalize_label_list(value: object | None, expected: int) -> List[Optional[
             labels += [labels[-1] if labels else None] * (expected - len(labels))
         return labels
     return [str(value)] * expected
+
+
+def _normalize_filter_map(raw: object) -> Dict[str, str]:
+    if raw is None:
+        return {}
+    if isinstance(raw, dict):
+        return {str(k): str(v) for k, v in raw.items()}
+    raise ValueError("variable_filters must be a table of key/value regex strings")

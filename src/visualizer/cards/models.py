@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import glob
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
+import re
 
 
 @dataclass(frozen=True)
@@ -11,6 +14,7 @@ class SubcardDefinition:
     filepath_template: str
     variables: Tuple[str, ...]
     filepaths: List[str]
+    overlay_variable: Optional[str] = None
     chart_style: Optional[str] = None
     chart_height: Optional[float] = None
 
@@ -159,8 +163,14 @@ class CardSession:
         card_dir = str(self.definition.path.parent)
         for path_str, style in zip(overlay_def.filepaths, styles):
             template = path_str.replace("<CARD_DIR>", card_dir)
-            replaced = _replace_variables(template, variables)
-            series_defs.append(SeriesDefinition(path=Path(replaced), chart_style=style))
+            overlay_var = overlay_def.overlay_variable
+            if overlay_var:
+                expanded_paths = _enumerate_overlay_paths(template, overlay_var, variables)
+                for path in expanded_paths:
+                    series_defs.append(SeriesDefinition(path=path, chart_style=style))
+            else:
+                replaced = _replace_variables(template, variables)
+                series_defs.append(SeriesDefinition(path=Path(replaced), chart_style=style))
         return OverlaySeries(series=series_defs)
 
 
@@ -169,6 +179,7 @@ class OverlayDefinition:
     name: str
     filepaths: List[str]
     chart_styles: List[Optional[str]]
+    overlay_variable: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -188,3 +199,68 @@ def _replace_variables(template: str, values: Dict[str, str]) -> str:
         result = result.replace(f"{{{{{key}}}}}", value)
         result = result.replace(f"{{{{ {key} }}}}", value)
     return result
+
+
+def _template_to_glob(template: str) -> str:
+    pattern: List[str] = []
+    i = 0
+    length = len(template)
+    while i < length:
+        if template.startswith("{{", i):
+            end = template.find("}}", i)
+            if end == -1:
+                raise ValueError("Unclosed variable in template")
+            pattern.append("*")
+            i = end + 2
+        else:
+            pattern.append(template[i])
+            i += 1
+    return "".join(pattern)
+
+
+def _template_to_regex(template: str) -> tuple[re.Pattern[str], Dict[str, str]]:
+    pattern_parts: List[str] = []
+    i = 0
+    wildcard_index = 0
+    var_counts: Dict[str, int] = {}
+    alias_map: Dict[str, str] = {}
+    length = len(template)
+    while i < length:
+        if template.startswith("{{", i):
+            end = template.find("}}", i)
+            if end == -1:
+                raise ValueError("Unclosed variable in template")
+            var_name = template[i + 2 : end].strip()
+            count = var_counts.get(var_name, 0)
+            alias = var_name if count == 0 else f"{var_name}__{count}"
+            var_counts[var_name] = count + 1
+            alias_map[alias] = var_name
+            pattern_parts.append(f"(?P<{alias}>[^/\\\\]+)")
+            i = end + 2
+        elif template[i] == "*":
+            pattern_parts.append(f"(?P<_wildcard_{wildcard_index}>[^/\\\\]+)")
+            wildcard_index += 1
+            i += 1
+        else:
+            ch = template[i]
+            if ch in ".^$+?{}[]|()":
+                pattern_parts.append("\\" + ch)
+            else:
+                pattern_parts.append(ch)
+            i += 1
+    regex = "".join(pattern_parts)
+    return re.compile(f"^{regex}$"), alias_map
+
+
+def _enumerate_overlay_paths(
+    template: str, overlay_variable: str, values: Dict[str, str]
+) -> List[Path]:
+    replaced = _replace_variables(template, values)
+    glob_pattern = _template_to_glob(replaced)
+    regex, _ = _template_to_regex(replaced)
+    paths: List[Path] = []
+    for match in glob.glob(glob_pattern):
+        normalized = os.path.normpath(match)
+        if regex.match(normalized):
+            paths.append(Path(normalized))
+    return sorted(paths)

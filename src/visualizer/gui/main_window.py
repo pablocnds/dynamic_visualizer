@@ -45,6 +45,7 @@ class MainWindow(QtWidgets.QMainWindow):
         ] = {}
         self._panel_order: List[str] = []
         self._data_dir_label: Optional[QtWidgets.QLabel] = None
+        self._cards_dir_label: Optional[QtWidgets.QLabel] = None
 
         self._build_ui()
         self._load_initial_sources()
@@ -70,6 +71,13 @@ class MainWindow(QtWidgets.QMainWindow):
         choose_folder_button.clicked.connect(self._handle_choose_folder)
         controls_layout.addWidget(choose_folder_button)
 
+        controls_layout.addWidget(QtWidgets.QLabel("Cards"))
+        self._cards_dir_label = QtWidgets.QLabel("No card folder selected")
+        controls_layout.addWidget(self._cards_dir_label)
+        choose_card_file_button = QtWidgets.QPushButton("Open Card File…")
+        choose_card_file_button.clicked.connect(self._handle_choose_card_file)
+        controls_layout.addWidget(choose_card_file_button)
+
         self._file_list = QtWidgets.QListWidget()
         self._file_list.itemSelectionChanged.connect(self._handle_file_selection)
 
@@ -92,7 +100,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self._variable_group.setVisible(False)
         controls_layout.addWidget(self._variable_group)
 
-        controls_layout.addWidget(QtWidgets.QLabel("Cards"))
         self._card_list = QtWidgets.QListWidget()
         self._card_list.itemSelectionChanged.connect(self._handle_card_selection)
         controls_layout.addWidget(self._card_list)
@@ -186,6 +193,20 @@ class MainWindow(QtWidgets.QMainWindow):
                 self._refresh_file_list()
                 self._status_label.setText(f"Loaded folder {self._data_dir}")
 
+    def _handle_choose_card_file(self) -> None:
+        dialog = QtWidgets.QFileDialog(self)
+        dialog.setFileMode(QtWidgets.QFileDialog.ExistingFile)
+        dialog.setNameFilters([
+            "Card files (*.toml)",
+            "All files (*)",
+        ])
+        if dialog.exec():
+            files = dialog.selectedFiles()
+            if files:
+                card_path = Path(files[0])
+                self._set_card_loader(card_path.parent, select_card=card_path)
+                self._status_label.setText(f"Loaded card {card_path.name}")
+
     def _handle_file_selection(self) -> None:
         selected_items = self._file_list.selectedItems()
         if not selected_items:
@@ -208,6 +229,7 @@ class MainWindow(QtWidgets.QMainWindow):
     def _load_cards(self) -> None:
         if not self._card_loader:
             return
+        self._card_list.clear()
         for card_path in self._card_loader.list_card_files():
             item = QtWidgets.QListWidgetItem(card_path.name)
             item.setData(QtCore.Qt.UserRole, card_path)
@@ -314,6 +336,21 @@ class MainWindow(QtWidgets.QMainWindow):
         )
         self._prev_view_button.setEnabled(active)
         self._next_view_button.setEnabled(active)
+
+    def _set_card_loader(self, path: Path, select_card: Path | None = None) -> None:
+        self._card_loader = CardLoader(path)
+        self._cards_dir = path
+        if self._cards_dir_label:
+            self._cards_dir_label.setText(str(path))
+        self._clear_card_selection()
+        self._load_cards()
+        if select_card:
+            for index in range(self._card_list.count()):
+                item = self._card_list.item(index)
+                if item.data(QtCore.Qt.UserRole) == select_card:
+                    self._card_list.setCurrentItem(item)
+                    self._handle_card_selection()
+                    break
 
     def _load_and_render(self, path: Path, card_style: str | None = None) -> None:
         try:

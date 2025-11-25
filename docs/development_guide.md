@@ -8,7 +8,7 @@ Desktop GUI (PySide6 + PyQtGraph) that loads CSV/JSON data, infers sensible defa
 - **Interpretation:** `DefaultInterpreter` maps a dataset to `PlotSpec`, infers line vs scatter (monotonic numeric X → line), and sorts X/Y for line plots.
 - **Visualization:** `PlotRenderer` draws single or multiple specs on PyQtGraph widgets; caching of rendered charts is planned for large datasets.
 - **GUI/orchestration:** `MainWindow` handles folder selection (no default path), file list, cards list, variable selectors, per-panel mode overrides, navigation via `pivot_chart`, and reset view.
-- **Cards:** Parsed by `CardLoader`; `CardSession` resolves variables, enforces pivot for multi-variable cards, supports subcards and overlays. `chart_style` defaults cascade: per-series → subcard → global.
+- **Cards:** Parsed by `CardLoader`; `CardSession` resolves variables, enforces pivot for multi-variable cards, supports subcards and overlays. `chart_style` defaults cascade: per-series → subcard → global. `overlay_variable` lets overlays auto-enumerate series (e.g., multiple fragments) without exposing them as selectable variables.
 
 ## Data Contracts
 - CSV: at least two columns; prefers `x_axis`/`y_axis`, otherwise uses the first two; lengths must match; Y must be numeric.

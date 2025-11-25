@@ -35,49 +35,83 @@ class CardLoader:
 
         subcards: List[SubcardDefinition] = []
         overlay_panels: Dict[str, OverlayDefinition] = {}
+        overlay_var_global = _normalize_variable(global_section.get("overlay_variable"))
         if subcards_section:
             for name, config in subcards_section.items():
                 template = config.get("filepath")
                 if not template:
                     raise ValueError(f"Subcard '{name}' missing filepath")
+                overlay_var = _normalize_variable(config.get("overlay_variable"))
                 if isinstance(template, list):
                     filepaths = [_ensure_string(path) for path in template]
+                    extracted_vars = _collect_variables(filepaths)
+                    if overlay_var and overlay_var not in extracted_vars:
+                        raise ValueError(
+                            f"Overlay variable '{overlay_var}' not found in any filepath for subcard '{name}'"
+                        )
+                    match_template = filepaths[0]
+                    for candidate in filepaths:
+                        vars_in_candidate = _extract_variables(candidate)
+                        if any(var != overlay_var for var in vars_in_candidate):
+                            match_template = candidate
+                            break
                     overlay_panels[name] = OverlayDefinition(
                         name=name,
                         filepaths=filepaths,
                         chart_styles=_normalize_style_list(
                             config.get("chart_style"), len(filepaths)
                         ),
+                        overlay_variable=overlay_var,
                     )
                     template = filepaths[0]
                 else:
                     filepaths = [_ensure_string(template)]
+                    extracted_vars = _extract_variables(template)
+                    if overlay_var and overlay_var not in extracted_vars:
+                        raise ValueError(
+                            f"Overlay variable '{overlay_var}' not found in template for subcard '{name}'"
+                        )
+                    overlay_var = overlay_var or None
+                    match_template = template
                 subcards.append(
                     SubcardDefinition(
                         name=name,
-                        filepath_template=str(template),
-                        variables=_extract_variables(template),
+                        filepath_template=str(match_template),
+                        variables=_remove_overlay_variable(extracted_vars, overlay_var),
                         chart_style=_maybe_list_first(config.get("chart_style")),
                         chart_height=_parse_chart_height(config.get("chart_height")),
                         filepaths=filepaths,
+                        overlay_variable=overlay_var,
                     )
                 )
         elif filepath_template:
+            overlay_var = _normalize_variable(data.get("overlay_variable") or overlay_var_global)
             if isinstance(filepath_template, list):
                 filepaths = [_ensure_string(path) for path in filepath_template]
+                extracted_vars = _collect_variables(filepaths)
+                if overlay_var and overlay_var not in extracted_vars:
+                    raise ValueError(f"Overlay variable '{overlay_var}' not found in any filepath")
+                match_template = filepaths[0]
+                for candidate in filepaths:
+                    vars_in_candidate = _extract_variables(candidate)
+                    if any(var != overlay_var for var in vars_in_candidate):
+                        match_template = candidate
+                        break
                 overlay_panels["overlay"] = OverlayDefinition(
                     name="overlay",
                     filepaths=filepaths,
                     chart_styles=_normalize_style_list(chart_style, len(filepaths)),
+                    overlay_variable=overlay_var,
                 )
-                template = filepaths[0]
+                template = match_template
                 subcards.append(
                     SubcardDefinition(
                         name="overlay",
                         filepath_template=template,
-                        variables=_extract_variables(template),
+                        variables=_remove_overlay_variable(extracted_vars, overlay_var),
                         chart_style=_maybe_list_first(chart_style),
                         filepaths=filepaths,
+                        overlay_variable=overlay_var,
                     )
                 )
             else:
@@ -89,6 +123,7 @@ class CardLoader:
                         variables=_extract_variables(template),
                         chart_style=_maybe_list_first(chart_style),
                         filepaths=[template],
+                        overlay_variable=None,
                     )
                 )
         elif not filepath_template:
@@ -132,6 +167,8 @@ class CardLoader:
                     if key.startswith("_wildcard_"):
                         continue
                     original_key = alias_map.get(key, key)
+                    if subcard.overlay_variable and original_key == subcard.overlay_variable:
+                        continue
                     groups[original_key] = value
                 matches.append(CardMatch(path=match_path, variables=groups))
 
@@ -258,3 +295,16 @@ def _normalize_style_list(value: object | None, expected: int) -> List[Optional[
             styles += [styles[-1] if styles else None] * (expected - len(styles))
         return styles
     return [str(value)] * expected
+
+
+def _remove_overlay_variable(variables: Tuple[str, ...], overlay_variable: str | None) -> Tuple[str, ...]:
+    if not overlay_variable:
+        return variables
+    return tuple(var for var in variables if var != overlay_variable)
+
+
+def _collect_variables(filepaths: List[str]) -> Tuple[str, ...]:
+    vars_set = set()
+    for path in filepaths:
+        vars_set.update(_extract_variables(path))
+    return tuple(sorted(vars_set))

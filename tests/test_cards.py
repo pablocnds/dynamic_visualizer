@@ -111,6 +111,7 @@ def test_overlay_series_falls_back_to_global_style() -> None:
                 filepath_template="dummy",
                 variables=(),
                 filepaths=["/tmp/a.json", "/tmp/b.json"],
+                overlay_variable=None,
                 chart_style=None,
                 chart_height=None,
             ),
@@ -123,6 +124,7 @@ def test_overlay_series_falls_back_to_global_style() -> None:
                 name="overlay",
                 filepaths=["/tmp/a.json", "/tmp/b.json"],
                 chart_styles=[None, None],
+                overlay_variable=None,
             )
         },
     )
@@ -135,3 +137,56 @@ def test_overlay_series_falls_back_to_global_style() -> None:
     series = session._build_overlay_series(overlay_def, session.selection).series
 
     assert [entry.chart_style for entry in series] == ["line", "line"]
+
+
+def test_overlay_variable_auto_discovers_series(tmp_path: Path) -> None:
+    card_dir = tmp_path / "cards"
+    data_dir = card_dir / "data" / "mix"
+    class_dir = data_dir / "classA"
+    class_dir.mkdir(parents=True)
+    (data_dir / "mix.json").write_text("noop")
+    for frag in ("100.00", "200.00"):
+        (class_dir / f"ms2_frag-{frag}_scatter.json").write_text("noop")
+
+    template = "<CARD_DIR>/data/mix/{{CLASS}}/ms2_frag-{{FRAG}}_scatter.json"
+    definition = CardDefinition(
+        path=card_dir / "card.toml",
+        subcards=(
+            SubcardDefinition(
+                name="overlay",
+                filepath_template=template,
+                variables=("CLASS",),
+                filepaths=[template],
+                overlay_variable="FRAG",
+                chart_style=None,
+                chart_height=None,
+            ),
+        ),
+        variables=("CLASS",),
+        chart_style="scatter",
+        pivot_variable="CLASS",
+        overlay_panels={
+            "overlay": OverlayDefinition(
+                name="overlay",
+                filepaths=[template],
+                chart_styles=[None],
+                overlay_variable="FRAG",
+            )
+        },
+    )
+    matches = {
+        "overlay": [
+            CardMatch(
+                path=class_dir / "ms2_frag-100.00_scatter.json",
+                variables={"CLASS": "classA"},
+            )
+        ]
+    }
+    session = CardSession(definition=definition, matches=matches)
+
+    series = session._build_overlay_series(definition.overlay_panels["overlay"], session.selection).series
+
+    assert [entry.path.name for entry in series] == [
+        "ms2_frag-100.00_scatter.json",
+        "ms2_frag-200.00_scatter.json",
+    ]

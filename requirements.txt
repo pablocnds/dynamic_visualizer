@@ -2,5 +2,6 @@
 pandas>=2.1
 PySide6>=6.7
 pyqtgraph>=0.13
+platformdirs>=4.2
 # Testing dependencies
 pytest>=8.1

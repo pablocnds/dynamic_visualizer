@@ -6,7 +6,7 @@ Interactive framework for loading processed analytical datasets (CSV or JSON) an
 1. `python3 -m venv .venv && source .venv/bin/activate`
 2. `pip install -r requirements.txt`
 3. Launch the prototype GUI via `PYTHONPATH=src python -m visualizer.app`.
-4. Choose a data folder in the GUI (or add individual files) to populate the sidebar. Choose a card folder or a single card file to load card definitions for the session.
+4. Choose a data folder in the GUI (or add individual files) to populate the sidebar. Choose a card folder or a single card file to load card definitions for the session (last-used paths are remembered across runs).
 5. Follow `docs/development_guide.md` (architecture/roadmap) and `docs/card_specification.md` (card format) as you extend the project.
 
 ## Data Formats

@@ -16,6 +16,7 @@ from visualizer.cards.models import (
 from visualizer.data.models import Dataset
 from visualizer.data.repository import DatasetRepository
 from visualizer.interpretation.specs import DefaultInterpreter, PlotSpec, VisualizationType
+from visualizer.state import StateManager
 from visualizer.viz.renderer import PlotRenderer
 
 
@@ -27,6 +28,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self._data_dir = data_dir
         self._cards_dir = cards_dir
+        self._state_manager = StateManager()
+        self._saved_state = self._state_manager.load()
         self._repository = DatasetRepository()
         self._interpreter = DefaultInterpreter()
         self._renderer = PlotRenderer()
@@ -46,8 +49,11 @@ class MainWindow(QtWidgets.QMainWindow):
         self._panel_order: List[str] = []
         self._data_dir_label: Optional[QtWidgets.QLabel] = None
         self._cards_dir_label: Optional[QtWidgets.QLabel] = None
+        self._added_files: set[Path] = set()
+        self._pending_card_file: Optional[Path] = None
 
         self._build_ui()
+        self._restore_state()
         self._load_initial_sources()
 
     def _build_ui(self) -> None:
@@ -144,7 +150,14 @@ class MainWindow(QtWidgets.QMainWindow):
         self._load_cards()
         if self._data_dir:
             self._refresh_file_list()
-        else:
+        if self._pending_card_file and self._card_loader:
+            for index in range(self._card_list.count()):
+                item = self._card_list.item(index)
+                if item.data(QtCore.Qt.UserRole) == self._pending_card_file:
+                    self._card_list.setCurrentItem(item)
+                    self._handle_card_selection()
+                    break
+        if not self._data_dir and not self._pending_card_file:
             self._status_label.setText("Choose a data folder or add files to begin.")
 
     def _add_file_to_list(self, path: Path) -> None:
@@ -155,6 +168,7 @@ class MainWindow(QtWidgets.QMainWindow):
         item = QtWidgets.QListWidgetItem(path.name)
         item.setData(QtCore.Qt.UserRole, path)
         self._file_list.addItem(item)
+        self._added_files.add(path)
 
     def _refresh_file_list(self) -> None:
         self._file_list.clear()
@@ -166,6 +180,9 @@ class MainWindow(QtWidgets.QMainWindow):
             self._data_dir_label.setText(str(self._data_dir))
         for file_path in self._repository.list_datasets(self._data_dir):
             self._add_file_to_list(file_path)
+        for extra in sorted(self._added_files):
+            if extra.exists():
+                self._add_file_to_list(extra)
 
     def _handle_add_file(self) -> None:
         dialog = QtWidgets.QFileDialog(self)
@@ -327,6 +344,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._clear_panel_widgets()
         self._plot_stack.setCurrentWidget(self._single_plot_widget)
         self._active_card_path = None
+        self._pending_card_file = None
 
     def _update_navigation_buttons(self) -> None:
         active = bool(
@@ -345,12 +363,48 @@ class MainWindow(QtWidgets.QMainWindow):
         self._clear_card_selection()
         self._load_cards()
         if select_card:
+            self._pending_card_file = select_card
             for index in range(self._card_list.count()):
                 item = self._card_list.item(index)
                 if item.data(QtCore.Qt.UserRole) == select_card:
                     self._card_list.setCurrentItem(item)
                     self._handle_card_selection()
                     break
+        else:
+            self._pending_card_file = None
+
+    def _restore_state(self) -> None:
+        data_dir = self._saved_state.get("data_dir")
+        card_file = self._saved_state.get("card_file")
+        added_files = self._saved_state.get("added_files", [])
+        if data_dir:
+            path = Path(data_dir)
+            if path.exists():
+                self._data_dir = path
+        for file_path in added_files:
+            path = Path(file_path)
+            if path.exists():
+                self._added_files.add(path)
+        if card_file:
+            path = Path(card_file)
+            if path.exists():
+                self._pending_card_file = path
+                self._set_card_loader(path.parent, select_card=path)
+
+    def _save_state(self) -> None:
+        state = {}
+        if self._data_dir and self._data_dir.exists():
+            state["data_dir"] = str(self._data_dir.resolve())
+        if self._active_card_path and self._active_card_path.exists():
+            state["card_file"] = str(self._active_card_path.resolve())
+        elif self._pending_card_file and self._pending_card_file.exists():
+            state["card_file"] = str(self._pending_card_file.resolve())
+        if self._cards_dir and self._cards_dir.exists():
+            state["card_dir"] = str(self._cards_dir.resolve())
+        extras = [str(path.resolve()) for path in self._added_files if path.exists()]
+        if extras:
+            state["added_files"] = extras
+        self._state_manager.save(state)
 
     def _load_and_render(self, path: Path, card_style: str | None = None) -> None:
         try:
@@ -573,6 +627,10 @@ class MainWindow(QtWidgets.QMainWindow):
             self._variable_controls[variable] = combo
             self._variable_form_layout.addRow(variable, combo)
         self._sync_variable_controls()
+
+    def closeEvent(self, event: QtGui.QCloseEvent) -> None:  # type: ignore[override]
+        self._save_state()
+        super().closeEvent(event)
 
     def _clear_variable_controls(self) -> None:
         while self._variable_form_layout.count():

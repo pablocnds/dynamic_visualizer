@@ -62,6 +62,7 @@ class CardLoader:
                             config.get("chart_style"), len(filepaths)
                         ),
                         overlay_variable=overlay_var,
+                        overlay_filter=_normalize_variable(config.get("overlay_filter")),
                     )
                     template = filepaths[0]
                 else:
@@ -102,6 +103,7 @@ class CardLoader:
                     filepaths=filepaths,
                     chart_styles=_normalize_style_list(chart_style, len(filepaths)),
                     overlay_variable=overlay_var,
+                    overlay_filter=_normalize_variable(data.get("overlay_filter")),
                 )
                 template = match_template
                 subcards.append(
@@ -154,6 +156,7 @@ class CardLoader:
             glob_pattern = _template_to_glob(normalized_template)
             regex, alias_map = _template_to_regex(normalized_template)
             matches: List[CardMatch] = []
+            uses_wildcard = "*" in normalized_template
             for match in glob.glob(glob_pattern):
                 match_path = Path(match).resolve()
                 normalized_match = os.path.normpath(str(match_path))
@@ -175,13 +178,23 @@ class CardLoader:
             if len(matches) > MAX_MATCHES:
                 raise ValueError(
                     f"Subcard '{subcard.name}' resolved to {len(matches)} matches which exceeds the limit of {MAX_MATCHES}"
-                )
+            )
             matches.sort(
                 key=lambda match_obj: (
                     tuple(match_obj.variables.get(var, "") for var in subcard.variables),
                     str(match_obj.path),
                 )
             )
+            if uses_wildcard and subcard.variables:
+                seen: Dict[tuple[str, ...], int] = {}
+                for match in matches:
+                    key = tuple(match.variables.get(var, "") for var in subcard.variables)
+                    seen[key] = seen.get(key, 0) + 1
+                duplicates = [key for key, count in seen.items() if count > 1]
+                if duplicates:
+                    raise ValueError(
+                        f"Subcard '{subcard.name}' wildcard matched multiple files for variables {duplicates[0]}"
+                    )
             resolved[subcard.name] = matches
         return resolved
 

@@ -190,3 +190,23 @@ def test_overlay_variable_auto_discovers_series(tmp_path: Path) -> None:
         "ms2_frag-100.00_scatter.json",
         "ms2_frag-200.00_scatter.json",
     ]
+
+
+def test_wildcard_requires_single_match(tmp_path: Path) -> None:
+    cards_dir = tmp_path / "cards"
+    data_dir = cards_dir / "data" / "classA"
+    data_dir.mkdir(parents=True)
+    (data_dir / "ms1_precursor-111.json").write_text("noop")
+    (data_dir / "ms1_precursor-222.json").write_text("noop")
+    card_path = cards_dir / "wildcard_card.toml"
+    card_path.write_text(
+        """
+filepath = "<CARD_DIR>/data/{{CLASS}}/ms1_precursor-*.json"
+"""
+    )
+
+    loader = CardLoader(cards_dir)
+    definition = loader.load_definition(card_path)
+
+    with pytest.raises(ValueError):
+        loader.resolve_paths(definition)

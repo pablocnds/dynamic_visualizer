@@ -4,16 +4,17 @@ TOML cards describe where to find datasets and how to render them. Variables are
 
 ## Core Concepts
 - `<CARD_DIR>`: directory containing the card; paths are resolved relative to it.
-- Variables: `{{VAR}}` or `*` (wildcard). They replace exactly one directory or filename segment and default to the first alphabetical value.
+- Variables: `{{VAR}}` placeholders replace exactly one directory or filename segment and default to the first alphabetical value. Use named variables even when only one exists; a pivot is optional when there is only one variable.
+- Wildcard (`*`): plain glob segment only; it is not a variable and never exposed in the UI.
 - Pivot: `pivot_chart = "{{VAR}}"` identifies which variable cycles when moving prev/next.
 - Styles: `chart_style` accepts `line` or `scatter` today. Subcards and overlays may override it; missing overrides fall back to the card’s global style.
-- Overlay discovery: `overlay_variable` marks a variable used only for overlay enumeration; it is not user-selectable and is removed from card variables/pivot logic.
+- Overlay discovery: `overlay_variable` marks a variable used only for overlay enumeration; it is not user-selectable and is removed from card variables/pivot logic. Optional `overlay_filter` (regex) can constrain which overlay values are accepted.
 
 ## Global Section (optional)
 ```toml
 [global]
 chart_style = "line"
-pivot_chart = "{{CLASS}}"  # required when >1 variable; optional for a single variable/wildcard
+pivot_chart = "{{CLASS}}"  # required when >1 variable; optional for a single variable
 ```
 
 ## Simple Card
@@ -21,7 +22,7 @@ pivot_chart = "{{CLASS}}"  # required when >1 variable; optional for a single va
 filepath = "<CARD_DIR>/../data/simple_study/*"
 chart_style = "line"
 ```
-Wildcard cards do not require `pivot_chart`.
+Wildcard-only cards do not require `pivot_chart`, but when you need a selectable value, declare a named variable instead of relying on `*`.
 
 ## Multi-Variable Card
 ```toml
@@ -56,6 +57,7 @@ filepath = [
 ]
 chart_style = ["line", "scatter"]  # or a single value applied to all paths
 overlay_variable = "{{FRAG}}"      # auto-discovers matching files and overlays them; not exposed in the UI
+overlay_filter = "^[0-9.]+$"       # optional regex to filter overlay values
 ```
 When `chart_style` entries are missing/shorter than `filepath`, remaining series use the card’s global style. If `overlay_variable` is provided, that variable is filtered out from selectable variables and every match of the pattern is rendered together in the overlay.
 

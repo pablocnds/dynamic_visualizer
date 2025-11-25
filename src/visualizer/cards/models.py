@@ -165,7 +165,12 @@ class CardSession:
             template = path_str.replace("<CARD_DIR>", card_dir)
             overlay_var = overlay_def.overlay_variable
             if overlay_var:
-                expanded_paths = _enumerate_overlay_paths(template, overlay_var, variables)
+                expanded_paths = _enumerate_overlay_paths(
+                    template,
+                    overlay_var,
+                    variables,
+                    overlay_def.overlay_filter,
+                )
                 for path in expanded_paths:
                     series_defs.append(SeriesDefinition(path=path, chart_style=style))
             else:
@@ -180,6 +185,7 @@ class OverlayDefinition:
     filepaths: List[str]
     chart_styles: List[Optional[str]]
     overlay_variable: Optional[str] = None
+    overlay_filter: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -253,14 +259,26 @@ def _template_to_regex(template: str) -> tuple[re.Pattern[str], Dict[str, str]]:
 
 
 def _enumerate_overlay_paths(
-    template: str, overlay_variable: str, values: Dict[str, str]
+    template: str,
+    overlay_variable: str,
+    values: Dict[str, str],
+    overlay_filter: str | None = None,
 ) -> List[Path]:
     replaced = _replace_variables(template, values)
     glob_pattern = _template_to_glob(replaced)
-    regex, _ = _template_to_regex(replaced)
+    regex, alias_map = _template_to_regex(replaced)
     paths: List[Path] = []
+    compiled_filter = re.compile(overlay_filter) if overlay_filter else None
     for match in glob.glob(glob_pattern):
         normalized = os.path.normpath(match)
-        if regex.match(normalized):
-            paths.append(Path(normalized))
+        match_obj = regex.match(normalized)
+        if not match_obj:
+            continue
+        var_value = match_obj.groupdict().get(overlay_variable) or match_obj.groupdict().get(
+            alias_map.get(overlay_variable, "")
+        )
+        if compiled_filter and var_value is not None:
+            if not compiled_filter.match(var_value):
+                continue
+        paths.append(Path(normalized))
     return sorted(paths)

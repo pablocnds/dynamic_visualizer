@@ -10,6 +10,7 @@ from visualizer.cards.models import (
     OverlayDefinition,
     SubcardDefinition,
 )
+from visualizer.interpretation.specs import VisualizationType
 
 
 def test_load_simple_card_definition() -> None:
@@ -18,9 +19,9 @@ def test_load_simple_card_definition() -> None:
     card_path = cards_dir / "1-simple_card.toml"
     definition = loader.load_definition(card_path)
 
-    assert definition.subcards[0].filepath_template.endswith("../data/simple_study/*")
+    assert "complex_study" in definition.subcards[0].filepath_template
     assert definition.chart_style == "line"
-    assert definition.variables == ()
+    assert definition.variables == ("DATASET",)
 
 
 def test_resolve_simple_card_matches() -> None:
@@ -33,6 +34,16 @@ def test_resolve_simple_card_matches() -> None:
     default_matches = matches.get("default")
     assert default_matches, "Expected the simple card to resolve at least one dataset"
     assert all(match.path.exists() for match in default_matches)
+
+
+def test_single_variable_cards_default_to_pivot() -> None:
+    cards_dir = Path("examples/cards")
+    loader = CardLoader(cards_dir)
+    card_path = cards_dir / "1-simple_card.toml"
+    definition = loader.load_definition(card_path)
+
+    assert definition.variables == ("DATASET",)
+    assert definition.pivot_variable == "DATASET"
 
 
 def test_multivariable_card_resolves_datasets_per_class() -> None:
@@ -192,6 +203,97 @@ def test_overlay_variable_auto_discovers_series(tmp_path: Path) -> None:
     ]
 
 
+def test_overlay_enumeration_handles_parent_paths_and_filters(tmp_path: Path) -> None:
+    cards_dir = tmp_path / "cards"
+    data_dir = tmp_path / "data" / "overlay_demo"
+    class_dir = data_dir / "classA"
+    class_dir.mkdir(parents=True)
+    (class_dir / "base_signal.json").write_text("noop")
+    (class_dir / "series-100.json").write_text("noop")
+    (class_dir / "series-150_relative.json").write_text("noop")
+    card_path = cards_dir / "overlay_card.toml"
+    cards_dir.mkdir(parents=True)
+    card_path.write_text(
+        """
+[global]
+pivot_chart = "{{CLASS}}"
+chart_style = ["line", "scatter"]
+overlay_variable = "{{SERIES}}"
+
+filepath = [
+  "<CARD_DIR>/../data/overlay_demo/{{CLASS}}/base_signal.json",
+  "<CARD_DIR>/../data/overlay_demo/{{CLASS}}/series-{{SERIES}}.json"
+]
+
+[variable_filters]
+SERIES = "^[0-9.]+$"
+"""
+    )
+
+    loader = CardLoader(cards_dir)
+    definition = loader.load_definition(card_path)
+    matches = loader.resolve_paths(definition)
+    session = CardSession(definition=definition, matches=matches)
+    overlay_def = definition.overlay_panels["overlay"]
+
+    series = session._build_overlay_series(
+        overlay_def,
+        session.selection,
+        fallback_style=definition.subcards[0].chart_style,
+    ).series
+
+    assert [entry.path.name for entry in series] == ["base_signal.json", "series-100.json"]
+
+
+def test_visualization_type_accepts_colormap_aliases() -> None:
+    assert VisualizationType.from_string("colormap") == VisualizationType.COLORMAP
+    assert VisualizationType.from_string("colormap_line") == VisualizationType.COLORMAP
+    assert VisualizationType.from_string("heatmap1d") == VisualizationType.COLORMAP
+    assert VisualizationType.from_string("eventline") == VisualizationType.EVENTLINE
+    assert VisualizationType.from_string("events") == VisualizationType.EVENTLINE
+
+
+def test_overlay_series_falls_back_to_subcard_style() -> None:
+    definition = CardDefinition(
+        path=Path("dummy"),
+        subcards=(
+            SubcardDefinition(
+                name="overlay",
+                filepath_template="dummy",
+                variables=(),
+                filepaths=["/tmp/a.json", "/tmp/b.json"],
+                overlay_variable=None,
+                chart_style="scatter",
+                chart_height=None,
+            ),
+        ),
+        variables=(),
+        chart_style="line",
+        pivot_variable=None,
+        overlay_panels={
+            "overlay": OverlayDefinition(
+                name="overlay",
+                filepaths=["/tmp/a.json", "/tmp/b.json"],
+                chart_styles=[None, None],
+                overlay_variable=None,
+            )
+        },
+    )
+    session = CardSession(
+        definition=definition,
+        matches={"overlay": [CardMatch(path=Path("/tmp/a.json"), variables={})]},
+    )
+
+    overlay_def = definition.overlay_panels["overlay"]
+    series = session._build_overlay_series(
+        overlay_def,
+        session.selection,
+        fallback_style="scatter",
+    ).series
+
+    assert [entry.chart_style for entry in series] == ["scatter", "scatter"]
+
+
 def test_wildcard_requires_single_match(tmp_path: Path) -> None:
     cards_dir = tmp_path / "cards"
     data_dir = cards_dir / "data" / "classA"
@@ -210,3 +312,52 @@ filepath = "<CARD_DIR>/data/{{CLASS}}/ms1_precursor-*.json"
 
     with pytest.raises(ValueError):
         loader.resolve_paths(definition)
+
+
+def test_overlay_subcard_registers_overlay_panel(tmp_path: Path) -> None:
+    cards_dir = tmp_path / "cards"
+    cards_dir.mkdir(parents=True)
+    card_path = cards_dir / "overlay_subcard.toml"
+    card_path.write_text(
+        """
+[subcards.overlay_panel]
+filepath = [
+  "<CARD_DIR>/data/{{CLASS}}/base.json",
+  "<CARD_DIR>/data/{{CLASS}}/extra-{{FRAG}}.json"
+]
+chart_style = ["line", "scatter"]
+overlay_variable = "{{FRAG}}"
+"""
+    )
+
+    loader = CardLoader(cards_dir)
+    definition = loader.load_definition(card_path)
+
+    assert "overlay_panel" in definition.overlay_panels
+
+
+def test_variable_filters_prune_primary_discovery(tmp_path: Path) -> None:
+    cards_dir = tmp_path / "cards"
+    data_dir = cards_dir / "data"
+    class_a = data_dir / "classA"
+    class_b = data_dir / "classB"
+    class_a.mkdir(parents=True)
+    class_b.mkdir(parents=True)
+    (class_a / "sample.json").write_text("noop")
+    (class_b / "sample.json").write_text("noop")
+    card_path = cards_dir / "filtered_card.toml"
+    card_path.write_text(
+        """
+filepath = "<CARD_DIR>/data/{{CLASS}}/sample.json"
+[variable_filters]
+CLASS = "^classA$"
+"""
+    )
+
+    loader = CardLoader(cards_dir)
+    definition = loader.load_definition(card_path)
+    matches = loader.resolve_paths(definition)
+
+    default_matches = matches["default"]
+    assert len(default_matches) == 1
+    assert default_matches[0].path.parent.name == "classA"

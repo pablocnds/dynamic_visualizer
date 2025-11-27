@@ -6,7 +6,7 @@ Desktop GUI (PySide6 + PyQtGraph) that loads CSV/JSON data, infers sensible defa
 ## Architecture Snapshot
 - **Data access:** `DatasetRepository` loads CSV/JSON with length/number validation, coerces types, caches by path+mtime. Dataset discovery is recursive when a folder is chosen.
 - **Interpretation:** `DefaultInterpreter` maps a dataset to `PlotSpec`, infers line vs scatter (monotonic numeric X → line), and sorts X/Y for line plots.
-- **Visualization:** `PlotRenderer` draws single or multiple specs on PyQtGraph widgets; caching of rendered charts is planned for large datasets.
+- **Visualization:** `PlotRenderer` draws single or multiple specs on PyQtGraph widgets, including 1-D colormap strips and event lines; caching of rendered charts is planned for large datasets.
 - **GUI/orchestration:** `MainWindow` handles folder selection (no default path), file list, cards list, variable selectors, per-panel mode overrides, navigation via `pivot_chart`, reset view, and persists last-used data/card paths between runs.
 - **Cards:** Parsed by `CardLoader`; `CardSession` resolves variables, enforces pivot for multi-variable cards, supports subcards and overlays. `chart_style` defaults cascade: per-series → subcard → global. `overlay_variable` lets overlays auto-enumerate series (e.g., multiple fragments) without exposing them as selectable variables.
 
@@ -15,10 +15,10 @@ Desktop GUI (PySide6 + PyQtGraph) that loads CSV/JSON data, infers sensible defa
 - JSON: must match `schema/data_payload.schema.json` shape (`data.x_axis`/`data.y_axis` arrays with equal, non-empty lengths); non-numeric Y is rejected; labels are optional.
 
 ## Card Rules (see `docs/card_specification.md`)
-- Variables (`{{VAR}}` or `*`) are single-level components discovered from directory/file names.
-- If a card has more than one variable, `pivot_chart` is required; single-variable or wildcard cards may omit it.
-- Subcards may set `chart_height` and `chart_style`; overlays accept arrays for `filepath`/`chart_style` and fall back to the global style when unspecified.
-- Discovery is template-driven and bounded per subcard; recursive scans are limited to variable positions, not arbitrary depth.
+- Variables (`{{VAR}}`) are single-level components discovered from directory/file names. Wildcards (`*`) are plain globs and not exposed as variables.
+- If a card has more than one variable, `pivot_chart` is required; single-variable cards may omit it.
+- Subcards may set `chart_height` and `chart_style`; overlays accept arrays for `filepath`/`chart_style`, optional per-series labels, and fall back to the global style when unspecified. Variable-level regex filters apply to overlays too.
+- Discovery is template-driven and bounded per subcard; recursive scans are limited to variable positions, not arbitrary depth. Wildcards that remain in non-overlay paths must resolve to exactly one file.
 
 ## Near-Term Work
 - Add caching/decimation strategies for very large datasets.

@@ -1,0 +1,15 @@
+# Overlay demo using a base series plus auto-discovered additional series per class.
+
+[global]
+pivot_chart = "{{CLASS}}"
+chart_style = ["line", "scatter"]
+overlay_variable = "{{SERIES}}"
+series_label = ["Base", "Series"]
+
+filepath = [
+  "<CARD_DIR>/../data/overlay_demo/{{CLASS}}/base_signal.json",
+  "<CARD_DIR>/../data/overlay_demo/{{CLASS}}/series-{{SERIES}}.json"
+]
+
+[variable_filters]
+SERIES = "[0-9.]+"

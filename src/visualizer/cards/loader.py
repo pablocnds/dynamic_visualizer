@@ -9,6 +9,7 @@ from typing import Dict, List, Optional, Tuple
 import tomllib
 
 from .models import CardDefinition, CardMatch, OverlayDefinition, SubcardDefinition, SeriesDefinition
+from .utils import _template_to_glob, _template_to_regex
 
 MAX_MATCHES = 1000
 VAR_PATTERN = re.compile(r"{{\s*([A-Za-z0-9_]+)\s*}}")
@@ -60,16 +61,16 @@ class CardLoader:
                         if any(var != overlay_var for var in vars_in_candidate):
                             match_template = candidate
                             break
-                        overlay_panels[name] = OverlayDefinition(
-                            name=name,
-                            filepaths=filepaths,
-                            chart_styles=_normalize_style_list(
-                                config.get("chart_style"), len(filepaths)
-                            ),
-                            overlay_variable=overlay_var,
-                            overlay_labels=_normalize_label_list(config.get("series_label"), len(filepaths)),
-                            overlay_path_filter=_normalize_variable(config.get("overlay_path_filter")),
-                        )
+                    overlay_panels[name] = OverlayDefinition(
+                        name=name,
+                        filepaths=filepaths,
+                        chart_styles=_normalize_style_list(
+                            config.get("chart_style"), len(filepaths)
+                        ),
+                        overlay_variable=overlay_var,
+                        overlay_labels=_normalize_label_list(config.get("series_label"), len(filepaths)),
+                        overlay_path_filter=_normalize_variable(config.get("overlay_path_filter")),
+                    )
                     template = filepaths[0]
                 else:
                     filepaths = [_ensure_string(template)]
@@ -144,6 +145,8 @@ class CardLoader:
             raise ValueError(
                 f"Pivot variable '{normalized_pivot}' is not present in the filepath template"
             )
+        if not normalized_pivot and len(all_variables) == 1:
+            normalized_pivot = all_variables[0]
         if len(all_variables) > 1 and not normalized_pivot:
             raise ValueError("Cards with multiple variables must define 'pivot_chart'")
 
@@ -159,6 +162,7 @@ class CardLoader:
 
     def resolve_paths(self, definition: CardDefinition) -> Dict[str, List[CardMatch]]:
         resolved: Dict[str, List[CardMatch]] = {}
+        compiled_filters = {k: re.compile(v) for k, v in (definition.variable_filters or {}).items()}
         for subcard in definition.subcards:
             normalized_template = _normalize_template(subcard, definition.path)
             glob_pattern = _template_to_glob(normalized_template)
@@ -170,6 +174,8 @@ class CardLoader:
                 normalized_match = os.path.normpath(str(match_path))
                 match_groups = regex.match(normalized_match)
                 if not match_groups:
+                    continue
+                if compiled_filters and not _match_filters(match_groups.groupdict(), alias_map, compiled_filters):
                     continue
                 groups: Dict[str, str] = {}
                 for key, value in match_groups.groupdict().items():
@@ -219,57 +225,6 @@ def _normalize_variable(value: object | None) -> str | None:
 def _normalize_template(subcard: SubcardDefinition, card_path: Path) -> str:
     resolved = subcard.filepath_template.replace("<CARD_DIR>", str(card_path.parent))
     return os.path.normpath(resolved)
-
-
-def _template_to_glob(template: str) -> str:
-    pattern: List[str] = []
-    i = 0
-    length = len(template)
-    while i < length:
-        if template.startswith("{{", i):
-            end = template.find("}}", i)
-            if end == -1:
-                raise ValueError("Unclosed variable in template")
-            pattern.append("*")
-            i = end + 2
-        else:
-            pattern.append(template[i])
-            i += 1
-    return "".join(pattern)
-
-
-def _template_to_regex(template: str) -> tuple[re.Pattern[str], Dict[str, str]]:
-    pattern_parts: List[str] = []
-    i = 0
-    wildcard_index = 0
-    var_counts: Dict[str, int] = {}
-    alias_map: Dict[str, str] = {}
-    length = len(template)
-    while i < length:
-        if template.startswith("{{", i):
-            end = template.find("}}", i)
-            if end == -1:
-                raise ValueError("Unclosed variable in template")
-            var_name = template[i + 2 : end].strip()
-            count = var_counts.get(var_name, 0)
-            alias = var_name if count == 0 else f"{var_name}__{count}"
-            var_counts[var_name] = count + 1
-            alias_map[alias] = var_name
-            pattern_parts.append(f"(?P<{alias}>[^/\\\\]+)")
-            i = end + 2
-        elif template[i] == "*":
-            pattern_parts.append(f"(?P<_wildcard_{wildcard_index}>[^/\\\\]+)")
-            wildcard_index += 1
-            i += 1
-        else:
-            ch = template[i]
-            if ch in ".^$+?{}[]|()":
-                pattern_parts.append("\\" + ch)
-            else:
-                pattern_parts.append(ch)
-            i += 1
-    regex = "".join(pattern_parts)
-    return re.compile(f"^{regex}$"), alias_map
 
 
 def _parse_chart_height(value: object | None) -> Optional[float]:
@@ -348,3 +303,19 @@ def _normalize_filter_map(raw: object) -> Dict[str, str]:
     if isinstance(raw, dict):
         return {str(k): str(v) for k, v in raw.items()}
     raise ValueError("variable_filters must be a table of key/value regex strings")
+
+
+def _match_filters(
+    groupdict: Dict[str, str], alias_map: Dict[str, str], filters: Dict[str, re.Pattern[str]]
+) -> bool:
+    for var_name, pattern in filters.items():
+        values = [
+            value
+            for alias, value in groupdict.items()
+            if value and alias_map.get(alias, alias) == var_name
+        ]
+        if not values:
+            continue
+        if not all(pattern.fullmatch(value) for value in values):
+            return False
+    return True

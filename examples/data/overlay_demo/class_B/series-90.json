@@ -1,0 +1,9 @@
+{
+  "dataset": "class_B_series_90",
+  "data": {
+    "x_label": "Time",
+    "y_label": "Value",
+    "x_axis": [0, 1, 2, 3, 4],
+    "y_axis": [0.18, 0.2, 0.22, 0.21, 0.23]
+  }
+}

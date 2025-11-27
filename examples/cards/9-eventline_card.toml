@@ -1,0 +1,7 @@
+# Event line example: marks positions along X with intensity taken from the Y values.
+
+[global]
+pivot_chart = "{{CLASS}}"
+chart_style = "eventline"
+
+filepath = "<CARD_DIR>/../data/overlay_demo/{{CLASS}}/base_signal.json"

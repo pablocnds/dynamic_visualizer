@@ -1,0 +1,11 @@
+# Overlay card combining a colormap strip and an event line using distinct color maps.
+
+[global]
+pivot_chart = "{{CLASS}}"
+chart_style = ["colormap", "eventline"]
+series_label = ["Signal Map", "Event Spikes"]
+
+filepath = [
+  "<CARD_DIR>/../data/overlay_demo/{{CLASS}}/base_signal.json",
+  "<CARD_DIR>/../data/overlay_demo/{{CLASS}}/base_signal.json"
+]

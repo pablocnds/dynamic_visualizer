@@ -1,0 +1,9 @@
+{
+  "dataset": "class_B_series_110_rel",
+  "data": {
+    "x_label": "Time",
+    "y_label": "Value",
+    "x_axis": [0, 1, 2, 3, 4],
+    "y_axis": [0.12, 0.13, 0.14, 0.15, 0.16]
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "dataset": "class_A_series_100",
+  "data": {
+    "x_label": "Time",
+    "y_label": "Value",
+    "x_axis": [0, 1, 2, 3, 4],
+    "y_axis": [0.2, 0.25, 0.22, 0.28, 0.3]
+  }
+}

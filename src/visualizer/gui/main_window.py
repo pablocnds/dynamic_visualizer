@@ -17,6 +17,7 @@ from visualizer.data.models import Dataset
 from visualizer.data.repository import DatasetRepository
 from visualizer.interpretation.specs import DefaultInterpreter, PlotSpec, VisualizationType
 from visualizer.state import StateManager
+from visualizer.gui.panels import PanelManager
 from visualizer.viz.renderer import PlotRenderer
 
 
@@ -33,6 +34,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._repository = DatasetRepository()
         self._interpreter = DefaultInterpreter()
         self._renderer = PlotRenderer()
+        self._panel_manager = PanelManager(self._renderer)
         self._current_spec: Optional[PlotSpec] = None
         self._current_dataset: Optional[Dataset] = None
         self._current_path: Optional[Path] = None
@@ -41,12 +43,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self._variable_controls: dict[str, QtWidgets.QComboBox] = {}
         self._active_card_path: Optional[Path] = None
         self._panel_overrides: Dict[str, VisualizationType | None] = {}
-        self._panel_plot_by_name: Dict[str, pg.PlotWidget] = {}
-        self._panel_title_by_name: Dict[str, QtWidgets.QLabel] = {}
-        self._latest_panel_data: Dict[
-            str, List[tuple[Optional[Dataset], Path, Optional[str], Optional[str]]]
-        ] = {}
-        self._panel_order: List[str] = []
         self._data_dir_label: Optional[QtWidgets.QLabel] = None
         self._cards_dir_label: Optional[QtWidgets.QLabel] = None
         self._added_files: set[Path] = set()
@@ -133,8 +129,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self._multi_plot_layout.setContentsMargins(0, 0, 0, 0)
         self._multi_plot_layout.setSpacing(12)
         self._plot_stack.addWidget(self._multi_plot_container)
-        self._panel_widgets: List[QtWidgets.QWidget] = []
-        self._panel_plots: List[pg.PlotWidget] = []
 
         content_layout.addWidget(self._plot_stack, 3)
 
@@ -143,6 +137,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self._status_label.setFrameShape(QtWidgets.QFrame.Panel)
         self._status_label.setFrameShadow(QtWidgets.QFrame.Sunken)
         self._status_label.setContentsMargins(8, 4, 8, 4)
+        self._status_label.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
+        self._status_label.customContextMenuRequested.connect(self._show_status_context_menu)
+        self._status_label.installEventFilter(self)
         main_layout.addWidget(self._status_label)
         self._update_navigation_buttons()
 
@@ -259,7 +256,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self._update_navigation_buttons()
             self._variable_group.setVisible(False)
             self._clear_variable_controls()
-            self._clear_panel_widgets()
+            self._panel_manager.clear(self._multi_plot_layout)
             self._plot_stack.setCurrentWidget(self._single_plot_widget)
             self._active_card_path = None
             return
@@ -281,7 +278,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 self._status_label.setText("Card has no matching datasets.")
                 self._update_navigation_buttons()
                 self._variable_group.setVisible(False)
-                self._clear_panel_widgets()
+                self._panel_manager.clear(self._multi_plot_layout)
                 return
             self._card_session = CardSession(definition=definition, matches=matches)
             self._active_card_path = card_path
@@ -294,7 +291,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self._status_label.setText(f"Card error: {exc}")
             self._update_navigation_buttons()
             self._variable_group.setVisible(False)
-            self._clear_panel_widgets()
+            self._panel_manager.clear(self._multi_plot_layout)
             self._active_card_path = None
 
     def _handle_next_view(self) -> None:
@@ -337,11 +334,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._variable_group.setVisible(False)
         self._clear_variable_controls()
         self._panel_overrides.clear()
-        self._panel_plot_by_name.clear()
-        self._panel_order.clear()
-        self._panel_title_by_name.clear()
-        self._latest_panel_data.clear()
-        self._clear_panel_widgets()
+        self._panel_manager.clear(self._multi_plot_layout)
         self._plot_stack.setCurrentWidget(self._single_plot_widget)
         self._active_card_path = None
         self._pending_card_file = None
@@ -412,7 +405,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self._current_dataset = dataset
             self._current_path = path
             self._plot_stack.setCurrentWidget(self._single_plot_widget)
-            self._clear_panel_widgets()
+            self._panel_manager.clear(self._multi_plot_layout)
             self._draw_plot(self._single_plot_widget, dataset, path, card_style)
             self._status_label.setText(f"Loaded {path.name}")
         except Exception as exc:  # pragma: no cover - GUI feedback
@@ -439,7 +432,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _handle_reset_view(self) -> None:
         self._single_plot_widget.enableAutoRange(x=True, y=True)
-        for plot in self._panel_plots:
+        for plot in self._panel_manager.panel_plots():
             plot.enableAutoRange(x=True, y=True)
 
     def _build_panel_layout(
@@ -453,32 +446,16 @@ class MainWindow(QtWidgets.QMainWindow):
         ],
     ) -> Optional[str]:
         self._plot_stack.setCurrentWidget(self._multi_plot_container)
-        self._clear_panel_widgets()
-        subcards = [panel[0] for panel in panels]
-        stretches, warning = self._calculate_panel_stretches(subcards)
-        ordered_names = [panel[0].name for panel in panels]
-        for (subcard, entries, paths), stretch in zip(panels, stretches):
-            panel_widget = QtWidgets.QWidget()
-            panel_layout = QtWidgets.QVBoxLayout(panel_widget)
-            header_layout = QtWidgets.QHBoxLayout()
-            title = QtWidgets.QLabel(self._format_panel_title(subcard, paths))
-            self._panel_title_by_name[subcard.name] = title
-            header_layout.addWidget(title)
-            header_layout.addStretch()
-            mode_label = QtWidgets.QLabel("Mode:")
-            header_layout.addWidget(mode_label)
-            style_combo = self._create_panel_style_combo(subcard.name)
-            header_layout.addWidget(style_combo)
-            panel_layout.addLayout(header_layout)
-            plot_widget = pg.PlotWidget()
-            panel_layout.addWidget(plot_widget)
-            self._multi_plot_layout.addWidget(panel_widget, stretch)
-            self._panel_widgets.append(panel_widget)
-            self._panel_plots.append(plot_widget)
-            self._panel_plot_by_name[subcard.name] = plot_widget
-            self._latest_panel_data[subcard.name] = entries
+        self._panel_manager.clear(self._multi_plot_layout)
+        stretches, warning = self._panel_manager.build_panels(
+            self._multi_plot_layout,
+            panels,
+            combo_factory=self._create_panel_style_combo,
+        )
+        # render newly built panels
+        for subcard, entries, _ in panels:
+            self._panel_manager.set_latest_panel_data(subcard.name, entries)
             self._rerender_panel(subcard.name)
-        self._panel_order = ordered_names
         return warning
 
     def _update_existing_panels(
@@ -491,45 +468,11 @@ class MainWindow(QtWidgets.QMainWindow):
             ]
         ],
     ) -> Optional[str]:
-        warning = None
-        for subcard, entries, paths in panels:
-            title = self._panel_title_by_name.get(subcard.name)
-            if title:
-                title.setText(self._format_panel_title(subcard, paths))
-            self._latest_panel_data[subcard.name] = entries
+        self._panel_manager.update_titles(panels)
+        for subcard, entries, _ in panels:
+            self._panel_manager.set_latest_panel_data(subcard.name, entries)
             self._rerender_panel(subcard.name)
-        return warning
-
-    def _calculate_panel_stretches(
-        self, subcards: List[SubcardDefinition]
-    ) -> tuple[List[int], Optional[str]]:
-        specified = [subcard.chart_height for subcard in subcards if subcard.chart_height]
-        total_specified = sum(specified)
-        warning: Optional[str] = None
-        if total_specified > 100:
-            warning = "Subcard heights exceed 100%; clamping proportions."
-        remaining = max(0.0, 100.0 - total_specified)
-        unspecified = [subcard for subcard in subcards if not subcard.chart_height]
-        default_height = (remaining / len(unspecified)) if unspecified and remaining > 0 else 0.0
-        if not specified and not unspecified:
-            default_height = 100.0
-        stretches: List[int] = []
-        for subcard in subcards:
-            height = subcard.chart_height if subcard.chart_height else default_height
-            if total_specified > 100 and subcard.chart_height:
-                height = subcard.chart_height * (100.0 / total_specified)
-            stretches.append(max(int(height) or 1, 1))
-        if not any(stretches):
-            stretches = [1 for _ in subcards]
-        return stretches, warning
-
-    def _format_panel_title(self, subcard: SubcardDefinition, paths: List[Path]) -> str:
-        friendly = subcard.name.replace("_", " ").title()
-        if not paths:
-            return f"{friendly} – (no data)"
-        if len(paths) == 1:
-            return f"{friendly} – {paths[0].name}"
-        return f"{friendly} – {paths[0].name} (+{len(paths) - 1} more)"
+        return None
 
     def _create_panel_style_combo(self, subcard_name: str) -> QtWidgets.QComboBox:
         combo = QtWidgets.QComboBox()
@@ -571,10 +514,11 @@ class MainWindow(QtWidgets.QMainWindow):
         self._rerender_panel(subcard_name)
 
     def _rerender_panel(self, subcard_name: str) -> None:
-        plot = self._panel_plot_by_name.get(subcard_name)
-        data = self._latest_panel_data.get(subcard_name)
+        plot = self._panel_manager.plot_by_name(subcard_name)
+        data = self._panel_manager.latest_panel_data().get(subcard_name)
         if not plot or not data:
             return
+        self._renderer.reset_widget(plot)
         override = self._panel_overrides.get(subcard_name)
         specs = []
         for dataset, path, default_style, label in data:
@@ -596,22 +540,12 @@ class MainWindow(QtWidgets.QMainWindow):
         elif len(specs) == 1:
             self._renderer.render(plot, specs[0])
         else:
-            self._renderer.render_multiple(plot, specs)
-
-    def _clear_panel_widgets(self) -> None:
-        while self._multi_plot_layout.count():
-            item = self._multi_plot_layout.takeAt(0)
-            widget = item.widget()
-            if widget:
-                widget.deleteLater()
-        for plot in self._panel_plots:
-            plot.deleteLater()
-        self._panel_widgets.clear()
-        self._panel_plots.clear()
-        self._panel_plot_by_name.clear()
-        self._panel_title_by_name.clear()
-        self._panel_order.clear()
-        self._latest_panel_data.clear()
+            try:
+                self._renderer.render_multiple(plot, specs)
+            except ValueError as exc:
+                # Incompatible overlay (e.g., mixing 1D and 2D plots); render first spec and surface message.
+                self._renderer.render(plot, specs[0])
+                self._status_label.setText(str(exc))
 
     def _populate_variable_controls(self) -> None:
         self._clear_variable_controls()
@@ -637,6 +571,14 @@ class MainWindow(QtWidgets.QMainWindow):
     def closeEvent(self, event: QtGui.QCloseEvent) -> None:  # type: ignore[override]
         self._save_state()
         super().closeEvent(event)
+
+    @property
+    def _panel_plots(self) -> List[pg.PlotWidget]:  # pragma: no cover - test/helper access
+        return self._panel_manager.panel_plots()
+
+    @property
+    def _panel_order(self) -> List[str]:  # pragma: no cover - test/helper access
+        return self._panel_manager.panel_order()
 
     def _clear_variable_controls(self) -> None:
         while self._variable_form_layout.count():
@@ -714,7 +656,9 @@ class MainWindow(QtWidgets.QMainWindow):
             overlay_def = self._card_session.definition.overlay_panels.get(subcard.name)
             if overlay_def:
                 overlay_series = self._card_session._build_overlay_series(
-                    overlay_def, match.variables
+                    overlay_def,
+                    match.variables,
+                    fallback_style=subcard.chart_style,
                 )
                 series_list = overlay_series.series
             else:
@@ -761,3 +705,22 @@ class MainWindow(QtWidgets.QMainWindow):
         if warning:
             message += f" [{warning}]"
         self._status_label.setText(message)
+
+    def _show_status_context_menu(self, pos: QtCore.QPoint) -> None:
+        menu = QtWidgets.QMenu(self)
+        copy_action = menu.addAction("Copy message")
+        copy_action.triggered.connect(self._copy_status_to_clipboard)
+        global_pos = self._status_label.mapToGlobal(pos)
+        menu.exec(global_pos)
+
+    def _copy_status_to_clipboard(self) -> None:
+        clipboard = QtWidgets.QApplication.clipboard()
+        if clipboard:
+            clipboard.setText(self._status_label.text())
+
+    def eventFilter(self, obj: QtCore.QObject, event: QtCore.QEvent) -> bool:  # type: ignore[override]
+        if obj is self._status_label and event.type() == QtCore.QEvent.MouseButtonPress:
+            if isinstance(event, QtGui.QMouseEvent) and event.button() == QtCore.Qt.LeftButton:
+                self._show_status_context_menu(event.pos())
+                return True
+        return super().eventFilter(obj, event)

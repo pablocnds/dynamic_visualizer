@@ -7,7 +7,7 @@ TOML cards describe where to find datasets and how to render them. Variables are
 - Variables: `{{VAR}}` placeholders replace exactly one directory or filename segment and default to the first alphabetical value. Use named variables even when only one exists; a pivot is optional when there is only one variable.
 - Wildcard (`*`): plain glob segment only; it is not a variable and never exposed in the UI.
 - Pivot: `pivot_chart = "{{VAR}}"` identifies which variable cycles when moving prev/next.
-- Styles: `chart_style` accepts `line` or `scatter` today. Subcards and overlays may override it; missing overrides fall back to the card’s global style.
+- Styles: `chart_style` accepts `line`, `scatter`, `colormap` (1-D heatmap strip), or `eventline` (1-D spike/event line). Subcards and overlays may override it; missing overrides fall back to the card’s global style. One-dimensional plots can overlay with each other; the renderer assigns distinct colormaps automatically.
 - Overlay discovery: `overlay_variable` marks a variable used only for overlay enumeration; it is not user-selectable and is removed from card variables/pivot logic. Variable-level filters (see below) apply to overlay variables as well; optional `overlay_path_filter` (regex on the resolved path) can further constrain entries.
 
 ## Global Section (optional)

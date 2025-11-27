@@ -1,0 +1,7 @@
+# 1-D colormap example rendering a single series as a heat strip along the X axis.
+
+[global]
+pivot_chart = "{{CLASS}}"
+chart_style = "colormap"
+
+filepath = "<CARD_DIR>/../data/overlay_demo/{{CLASS}}/base_signal.json"

@@ -10,10 +10,22 @@ from visualizer.data.models import Dataset
 class VisualizationType(str, Enum):
     LINE = "line"
     SCATTER = "scatter"
+    COLORMAP = "colormap"
+    EVENTLINE = "eventline"
 
     @classmethod
     def from_string(cls, value: str) -> VisualizationType:
         normalized = value.strip().lower()
+        aliases = {
+            "colormap_line": cls.COLORMAP,
+            "colormap": cls.COLORMAP,
+            "heatmap1d": cls.COLORMAP,
+            "eventline": cls.EVENTLINE,
+            "events": cls.EVENTLINE,
+            "spikes": cls.EVENTLINE,
+        }
+        if normalized in aliases:
+            return aliases[normalized]
         for member in cls:
             if member.value == normalized:
                 return member

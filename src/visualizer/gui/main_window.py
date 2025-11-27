@@ -122,12 +122,15 @@ class MainWindow(QtWidgets.QMainWindow):
         controls_layout.addStretch()
 
         self._plot_stack = QtWidgets.QStackedWidget()
+        self._card_title_label = QtWidgets.QLabel("")
+        self._card_title_label.setAlignment(QtCore.Qt.AlignCenter)
+        self._card_title_label.setStyleSheet("font-weight: bold;")
         self._single_plot_widget = pg.PlotWidget()
         self._plot_stack.addWidget(self._single_plot_widget)
         self._multi_plot_container = QtWidgets.QWidget()
         self._multi_plot_layout = QtWidgets.QVBoxLayout(self._multi_plot_container)
         self._multi_plot_layout.setContentsMargins(0, 0, 0, 0)
-        self._multi_plot_layout.setSpacing(12)
+        self._multi_plot_layout.setSpacing(0)
         self._plot_stack.addWidget(self._multi_plot_container)
 
         content_layout.addWidget(self._plot_stack, 3)
@@ -140,6 +143,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._status_label.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
         self._status_label.customContextMenuRequested.connect(self._show_status_context_menu)
         self._status_label.installEventFilter(self)
+        main_layout.addWidget(self._card_title_label)
         main_layout.addWidget(self._status_label)
         self._update_navigation_buttons()
 
@@ -450,8 +454,11 @@ class MainWindow(QtWidgets.QMainWindow):
         stretches, warning = self._panel_manager.build_panels(
             self._multi_plot_layout,
             panels,
-            combo_factory=self._create_panel_style_combo,
+            combo_factory=None,
+            synchronize_x_axis=self._card_session.definition.synchronize_axis if self._card_session else False,
         )
+        if self._card_session and self._card_session.definition.synchronize_axis:
+            self._panel_manager.synchronize_x_axes()
         # render newly built panels
         for subcard, entries, _ in panels:
             self._panel_manager.set_latest_panel_data(subcard.name, entries)
@@ -695,6 +702,8 @@ class MainWindow(QtWidgets.QMainWindow):
             warning = self._build_panel_layout(panels)
         else:
             warning = self._update_existing_panels(panels)
+            if self._card_session and self._card_session.definition.synchronize_axis:
+                self._panel_manager.synchronize_x_axes()
         selection_text = ", ".join(
             f"{var}={value}" for var, value in sorted(self._card_session.selection.items())
         )

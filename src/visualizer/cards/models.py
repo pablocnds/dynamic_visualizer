@@ -30,6 +30,7 @@ class CardDefinition:
     pivot_variable: Optional[str] = None
     overlay_panels: Dict[str, "OverlayDefinition"] = field(default_factory=dict)
     variable_filters: Dict[str, str] = field(default_factory=dict)
+    synchronize_axis: bool = False
 
     def has_subcards(self) -> bool:
         return bool(self.subcards)

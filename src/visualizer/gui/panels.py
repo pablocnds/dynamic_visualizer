@@ -24,6 +24,7 @@ class PanelManager:
         self._latest_panel_data: Dict[
             str, List[tuple[object | None, Path, str | None, str | None]]
         ] = {}
+        self._synchronize_x = False
 
     def clear(self, layout: QtWidgets.QVBoxLayout) -> None:
         while layout.count():
@@ -42,6 +43,7 @@ class PanelManager:
         self._panel_title_by_name.clear()
         self._panel_order.clear()
         self._latest_panel_data.clear()
+        self._synchronize_x = False
 
     def build_panels(
         self,
@@ -54,22 +56,14 @@ class PanelManager:
             ]
         ],
         combo_factory: Callable[[str], QtWidgets.QWidget] | None = None,
+        synchronize_x_axis: bool = False,
     ) -> Tuple[List[int], str | None]:
+        self._synchronize_x = synchronize_x_axis
         stretches, warning = self._calculate_panel_stretches([p[0] for p in panels])
         ordered_names = [panel[0].name for panel in panels]
-        for (subcard, entries, paths), stretch in zip(panels, stretches):
+        for idx, ((subcard, entries, paths), stretch) in enumerate(zip(panels, stretches)):
             panel_widget = QtWidgets.QWidget()
             panel_layout = QtWidgets.QVBoxLayout(panel_widget)
-            header_layout = QtWidgets.QHBoxLayout()
-            title = QtWidgets.QLabel(self._format_panel_title(subcard, paths))
-            self._panel_title_by_name[subcard.name] = title
-            header_layout.addWidget(title)
-            header_layout.addStretch()
-            if combo_factory:
-                mode_label = QtWidgets.QLabel("Mode:")
-                header_layout.addWidget(mode_label)
-                header_layout.addWidget(combo_factory(subcard.name))
-            panel_layout.addLayout(header_layout)
             plot_widget = pg.PlotWidget()
             panel_layout.addWidget(plot_widget)
             container_layout.addWidget(panel_widget, stretch)
@@ -78,14 +72,23 @@ class PanelManager:
             self._panel_plot_by_name[subcard.name] = plot_widget
             self._latest_panel_data[subcard.name] = entries
             plot_widget.enableAutoRange(x=True, y=True)
+            if synchronize_x_axis and idx < len(panels) - 1:
+                plot_widget.showAxis("bottom", show=False)
+            if idx < len(panels) - 1:
+                separator = QtWidgets.QFrame()
+                separator.setFrameShape(QtWidgets.QFrame.HLine)
+                separator.setFrameShadow(QtWidgets.QFrame.Plain)
+                separator.setLineWidth(1)
+                separator.setMaximumHeight(2)
+                container_layout.addWidget(separator)
         self._panel_order = ordered_names
+        if synchronize_x_axis:
+            self.synchronize_x_axes()
         return stretches, warning
 
     def update_titles(self, panels: List[tuple[SubcardDefinition, list, List[Path]]]) -> None:
-        for subcard, _, paths in panels:
-            title = self._panel_title_by_name.get(subcard.name)
-            if title:
-                title.setText(self._format_panel_title(subcard, paths))
+        # titles removed from per-panel headers; no-op retained for compatibility
+        return None
 
     def panel_plots(self) -> List[pg.PlotWidget]:
         return self._panel_plots
@@ -104,8 +107,18 @@ class PanelManager:
     def panel_order(self) -> List[str]:
         return self._panel_order
 
-    def panel_titles(self) -> Dict[str, QtWidgets.QLabel]:
-        return self._panel_title_by_name
+    def synchronize_x_axes(self) -> None:
+        if len(self._panel_plots) < 2:
+            return
+        master_vb = self._panel_plots[0].getPlotItem().getViewBox()
+        for plot in self._panel_plots[1:]:
+            try:
+                plot.getPlotItem().setXLink(master_vb)
+            except Exception:
+                continue
+        if self._synchronize_x:
+            for idx, plot in enumerate(self._panel_plots):
+                plot.showAxis("bottom", show=(idx == len(self._panel_plots) - 1))
 
     def _calculate_panel_stretches(
         self, subcards: List[SubcardDefinition]

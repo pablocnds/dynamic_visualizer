@@ -36,6 +36,7 @@ class CardLoader:
         )
         chart_style = data.get("chart_style") or global_section.get("chart_style")
         pivot = data.get("pivot_chart") or global_section.get("pivot_chart")
+        synchronize_axis = bool(global_section.get("synchronize_axis", False))
         subcards_section = data.get("subcards") or {}
 
         subcards: List[SubcardDefinition] = []
@@ -158,6 +159,7 @@ class CardLoader:
             pivot_variable=normalized_pivot,
             overlay_panels=overlay_panels,
             variable_filters=variable_filters,
+            synchronize_axis=synchronize_axis,
         )
 
     def resolve_paths(self, definition: CardDefinition) -> Dict[str, List[CardMatch]]:

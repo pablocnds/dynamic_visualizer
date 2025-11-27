@@ -137,7 +137,8 @@ class PlotRenderer:
             widget.showGrid(x=True, y=True, alpha=0.2)
             return
 
-        x_numeric, values = self._downsample_1d(self._coerce_array(spec.x, fallback_range=True), values, _MAX_1D_SAMPLES)
+        x_full = self._coerce_array(spec.x, fallback_range=True)
+        x_numeric, values = self._resample_colormap(x_full, values, _MAX_1D_SAMPLES)
         rect = self._compute_rect(x_numeric, len(values))
 
         image = values.reshape(1, -1)
@@ -273,13 +274,18 @@ class PlotRenderer:
         return spec.visualization in {VisualizationType.COLORMAP, VisualizationType.EVENTLINE}
 
     def _coerce_array(self, values, fallback_range: bool = False) -> np.ndarray:
-        try:
-            arr = np.asarray(values, dtype=float)
-        except Exception:
-            arr = np.array([], dtype=float)
-        if arr.size == 0 and fallback_range and values is not None:
+        coerced: list[float] = []
+        if values is None:
+            return np.array([], dtype=float)
+        for item in values:
             try:
-                arr = np.arange(len(values), dtype=float)
+                coerced.append(float(item))
+            except Exception:
+                coerced.append(np.nan)
+        arr = np.asarray(coerced, dtype=float)
+        if np.isnan(arr).all() and fallback_range:
+            try:
+                arr = np.arange(len(coerced), dtype=float)
             except Exception:
                 arr = np.array([], dtype=float)
         return arr
@@ -302,16 +308,28 @@ class PlotRenderer:
                 break
             y_chunk = y_values[start:end]
             x_chunk = x_numeric[start:end]
-            ys.append(float(np.nanmax(y_chunk)))
-            xs.append(float(np.nanmean(x_chunk)) if x_chunk.size else float(i))
+            if not y_chunk.size:
+                continue
+            max_idx = int(np.nanargmax(np.abs(y_chunk)))
+            ys.append(float(y_chunk[max_idx]))
+            xs.append(float(x_chunk[max_idx]) if x_chunk.size else float(i))
         return np.asarray(xs, dtype=float), np.asarray(ys, dtype=float)
 
     def _compute_rect(self, x_numeric: np.ndarray, length: int) -> pg.QtCore.QRectF:
-        if x_numeric.size == length and x_numeric.size > 0:
-            x_min = float(np.nanmin(x_numeric))
-            x_max = float(np.nanmax(x_numeric))
+        valid = x_numeric[np.isfinite(x_numeric)]
+        if valid.size and length:
+            x_min = float(np.nanmin(valid))
+            x_max = float(np.nanmax(valid))
             span = x_max - x_min
-            return pg.QtCore.QRectF(x_min, 0.0, span if span else 1.0, 1.0)
+            if valid.size > 1 and span > 0:
+                diffs = np.diff(np.sort(valid))
+                diffs = diffs[diffs > 0]
+                step = float(np.median(diffs)) if diffs.size else span / max(length - 1, 1)
+            else:
+                step = 1.0
+            pad = step / 2.0
+            width = span + 2 * pad if span > 0 else step
+            return pg.QtCore.QRectF(x_min - pad, 0.0, width, 1.0)
         return pg.QtCore.QRectF(0.0, 0.0, float(length if length > 0 else 1), 1.0)
 
     def _bin_events(self, x_numeric: np.ndarray, intensities: np.ndarray, max_bins: int) -> tuple[np.ndarray, np.ndarray]:
@@ -329,6 +347,27 @@ class PlotRenderer:
             if 0 <= bin_idx < max_bins:
                 if value > agg[bin_idx]:
                     agg[bin_idx] = value
+        centers = (bins[:-1] + bins[1:]) / 2.0
+        return centers, agg
+
+    def _resample_colormap(
+        self, x_numeric: np.ndarray, values: np.ndarray, max_samples: int
+    ) -> tuple[np.ndarray, np.ndarray]:
+        if x_numeric.size <= max_samples or x_numeric.size == 0:
+            return x_numeric, values
+        x_min = float(np.nanmin(x_numeric))
+        x_max = float(np.nanmax(x_numeric))
+        if not np.isfinite(x_min) or not np.isfinite(x_max) or x_min == x_max:
+            return self._downsample_1d(x_numeric, values, max_samples)
+        bins = np.linspace(x_min, x_max, max_samples + 1)
+        idx = np.digitize(x_numeric, bins) - 1
+        agg = np.zeros(max_samples, dtype=float)
+        has_val = np.zeros(max_samples, dtype=bool)
+        for val, bin_idx in zip(values, idx):
+            if 0 <= bin_idx < max_samples:
+                if not has_val[bin_idx] or abs(val) > abs(agg[bin_idx]):
+                    agg[bin_idx] = val
+                    has_val[bin_idx] = True
         centers = (bins[:-1] + bins[1:]) / 2.0
         return centers, agg
 
@@ -359,7 +398,7 @@ class PlotRenderer:
         if values.size == 0:
             return
         x_numeric = self._coerce_array(spec.x, fallback_range=True)
-        x_numeric, values = self._downsample_1d(x_numeric, values, _MAX_1D_SAMPLES)
+        x_numeric, values = self._resample_colormap(x_numeric, values, _MAX_1D_SAMPLES)
         rect = self._compute_rect(x_numeric, len(values))
 
         image = values.reshape(1, -1)

@@ -101,3 +101,45 @@ def test_overlay_allows_one_dimensional_mix(app: QtWidgets.QApplication) -> None
         ),
     ]
     renderer.render_multiple(widget, specs)
+
+
+def test_colormap_rect_alignment(app: QtWidgets.QApplication) -> None:
+    renderer = PlotRenderer()
+    widget = pg.PlotWidget()
+    spec = PlotSpec(
+        dataset_id="d3",
+        label=None,
+        x=[10, 20, 30],
+        y=[1, 2, 3],
+        x_label="x",
+        y_label="y",
+        visualization=VisualizationType.COLORMAP,
+    )
+    renderer.render(widget, spec)
+    image_items = [item for item in widget.getPlotItem().items if isinstance(item, pg.ImageItem)]
+    assert image_items
+    rect = image_items[0].mapRectToParent(image_items[0].boundingRect())
+    assert rect.left() == pytest.approx(5.0)
+    assert rect.right() == pytest.approx(35.0)
+
+
+def test_colormap_downsample_keeps_peak_position(app: QtWidgets.QApplication) -> None:
+    renderer = PlotRenderer()
+    widget = pg.PlotWidget()
+    x = list(range(1000))
+    y = [0.0] * 999 + [10.0]
+    spec = PlotSpec(
+        dataset_id="d4",
+        label=None,
+        x=x,
+        y=y,
+        x_label="x",
+        y_label="y",
+        visualization=VisualizationType.COLORMAP,
+    )
+    renderer.render(widget, spec)
+    image_items = [item for item in widget.getPlotItem().items if isinstance(item, pg.ImageItem)]
+    assert image_items
+    rect = image_items[0].mapRectToParent(image_items[0].boundingRect())
+    assert rect.right() == pytest.approx(999.5, abs=1.0)
+    assert rect.left() == pytest.approx(-0.5, abs=1.0)

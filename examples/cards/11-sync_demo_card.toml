@@ -1,0 +1,15 @@
+# Sync demo card showing aligned X-axis with hidden redundant axes.
+
+[global]
+pivot_chart = "{{CLASS}}"
+synchronize_axis = true
+
+[subcards.top]
+filepath = "<CARD_DIR>/../data/overlay_demo/{{CLASS}}/base_signal.json"
+
+[subcards.bottom]
+filepath = "<CARD_DIR>/../data/overlay_demo/{{CLASS}}/series-{{SERIES}}.json"
+chart_style = "colormap"
+
+[variable_filters]
+SERIES = "^[0-9.]+$"

@@ -73,7 +73,13 @@ class PanelManager:
             self._latest_panel_data[subcard.name] = entries
             plot_widget.enableAutoRange(x=True, y=True)
             if synchronize_x_axis and idx < len(panels) - 1:
-                plot_widget.showAxis("bottom", show=False)
+                plot_widget.hideAxis("bottom")
+                axis = plot_widget.getPlotItem().getAxis("bottom")
+                axis.setStyle(showValues=False, tickLength=0)
+                axis.setPen(None)
+                axis.setHeight(0)
+                axis.setTicks([])
+                plot_widget._bottom_axis_hidden = True  # type: ignore[attr-defined]
             if idx < len(panels) - 1:
                 separator = QtWidgets.QFrame()
                 separator.setFrameShape(QtWidgets.QFrame.HLine)
@@ -118,7 +124,22 @@ class PanelManager:
                 continue
         if self._synchronize_x:
             for idx, plot in enumerate(self._panel_plots):
-                plot.showAxis("bottom", show=(idx == len(self._panel_plots) - 1))
+                visible = idx == len(self._panel_plots) - 1
+                axis = plot.getPlotItem().getAxis("bottom")
+                if visible:
+                    plot.showAxis("bottom", show=True)
+                    axis.setStyle(showValues=True)
+                    axis.setHeight(None)
+                    axis.setPen(axis.textPen())
+                    axis.setTicks(None)
+                    plot._bottom_axis_hidden = False  # type: ignore[attr-defined]
+                else:
+                    plot.hideAxis("bottom")
+                    axis.setStyle(showValues=False, tickLength=0)
+                    axis.setPen(None)
+                    axis.setHeight(0)
+                    axis.setTicks([])
+                    plot._bottom_axis_hidden = True  # type: ignore[attr-defined]
 
     def _calculate_panel_stretches(
         self, subcards: List[SubcardDefinition]

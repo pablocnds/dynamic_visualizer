@@ -111,3 +111,16 @@ def test_colorbars_do_not_stack_within_same_card_rerender(app: QtWidgets.QApplic
     second_colorbars = [item for item in scene2.items() if isinstance(item, pg.ColorBarItem)]
     assert len(second_colorbars) >= 2
     assert len(second_colorbars) == len(first_colorbars)
+
+
+def test_synchronized_axes_hide_redundant_bottom_axes(app: QtWidgets.QApplication) -> None:  # noqa: ARG001
+    window = _create_window()
+    window._activate_card(window._cards_dir / "11-sync_demo_card.toml")  # type: ignore[attr-defined]
+    plots = window._panel_plots  # type: ignore[attr-defined]
+    assert len(plots) >= 2
+    for idx, plot in enumerate(plots):
+        axis = plot.getPlotItem().getAxis("bottom")
+        if idx < len(plots) - 1:
+            assert getattr(plot, "_bottom_axis_hidden", False) is True
+        else:
+            assert getattr(plot, "_bottom_axis_hidden", False) is False

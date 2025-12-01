@@ -123,6 +123,7 @@ class PanelManager:
             except Exception:
                 continue
         if self._synchronize_x:
+            self._equalize_x_ranges()
             for idx, plot in enumerate(self._panel_plots):
                 visible = idx == len(self._panel_plots) - 1
                 axis = plot.getPlotItem().getAxis("bottom")
@@ -140,6 +141,48 @@ class PanelManager:
                     axis.setHeight(0)
                     axis.setTicks([])
                     plot._bottom_axis_hidden = True  # type: ignore[attr-defined]
+
+    def _equalize_x_ranges(self) -> None:
+        """Ensure all linked plots start with a common X range covering all data."""
+        bounds: List[tuple[float, float]] = []
+        for plot in self._panel_plots:
+            x_bounds = self._extract_plot_x_bounds(plot)
+            if x_bounds:
+                bounds.append(x_bounds)
+        if not bounds:
+            return
+        global_min = min(b[0] for b in bounds)
+        global_max = max(b[1] for b in bounds)
+        if global_min >= global_max:
+            return
+        padding = max((global_max - global_min) * 0.05, 0.0)
+        for plot in self._panel_plots:
+            try:
+                plot.getPlotItem().setXRange(global_min - padding, global_max + padding, padding=0)
+            except Exception:
+                continue
+
+    def _extract_plot_x_bounds(self, plot: pg.PlotWidget) -> tuple[float, float] | None:
+        x_min = None
+        x_max = None
+        for item in plot.getPlotItem().items:
+            try:
+                rect = item.mapRectToParent(item.boundingRect())
+                if rect.width() == 0:
+                    continue
+                left = float(rect.left())
+                right = float(rect.right())
+            except Exception:
+                continue
+            x_min = left if x_min is None else min(x_min, left)
+            x_max = right if x_max is None else max(x_max, right)
+        if x_min is None or x_max is None:
+            try:
+                vr = plot.getPlotItem().getViewBox().viewRange()[0]
+                return float(vr[0]), float(vr[1])
+            except Exception:
+                return None
+        return x_min, x_max
 
     def _calculate_panel_stretches(
         self, subcards: List[SubcardDefinition]

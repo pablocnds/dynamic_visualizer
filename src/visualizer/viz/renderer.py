@@ -7,7 +7,7 @@ import numpy as np
 
 from visualizer.interpretation.specs import PlotSpec, VisualizationType
 
-_MAX_1D_SAMPLES = 1200
+_MAX_1D_SAMPLES = 10000
 _MAX_EVENT_BINS = 800
 
 
@@ -18,6 +18,7 @@ class PlotRenderer:
         pg.setConfigOption("background", "w")
         pg.setConfigOption("foreground", "k")
         self._colorbars: dict[int, list[pg.ColorBarItem]] = {}
+        self._axis_pen = pg.mkPen(color=(0, 0, 0, 120), width=1)
         self._colorbars: dict[int, list[pg.ColorBarItem]] = {}
 
     def render(self, widget: pg.PlotWidget, spec: PlotSpec) -> None:
@@ -126,10 +127,7 @@ class PlotRenderer:
         self._clear_legend(widget)
         self._clear_colorbar(widget)
         plot_item = widget.getPlotItem()
-        plot_item.hideAxis("left")
-        plot_item.getAxis("left").setStyle(showValues=False)
-        plot_item.showAxis("bottom")
-        plot_item.showGrid(x=False, y=False)
+        self._style_1d_plot(plot_item)
         values = self._coerce_array(spec.y)
         if values.size == 0:
             widget.setLabel("bottom", spec.x_label or "X Axis")
@@ -138,7 +136,8 @@ class PlotRenderer:
             return
 
         x_full = self._coerce_array(spec.x, fallback_range=True)
-        x_numeric, values = self._resample_colormap(x_full, values, _MAX_1D_SAMPLES)
+        target_bins = min(_MAX_1D_SAMPLES, max(1, values.size))
+        x_numeric, values = self._resample_colormap(x_full, values, target_bins)
         rect = self._compute_rect(x_numeric, len(values))
 
         image = values.reshape(1, -1)
@@ -149,41 +148,25 @@ class PlotRenderer:
         image_item.setLookupTable(cmap.getLookupTable(alpha=False))
         image_item.setLevels((float(np.nanmin(values)), float(np.nanmax(values))))
         widget.addItem(image_item)
-        self._insert_colorbar(
-            widget,
-            pg.ColorBarItem(
-                values=(float(np.nanmin(values)), float(np.nanmax(values))),
-                colorMap=cmap,
-            ),
-            image_item=image_item,
-            label=spec.y_label or "Intensity",
-        )
-        widget.setLabel("bottom", spec.x_label or "X Axis")
-        widget.setLabel("left", spec.y_label or "Intensity")
+        widget.setLabel("bottom", None)
+        widget.setLabel("left", None)
         widget.setYRange(0, 1, padding=0)
-        widget.showGrid(x=True, y=True, alpha=0.1)
+        widget.showGrid(x=False, y=False)
 
     def _render_eventline(self, widget: pg.PlotWidget, spec: PlotSpec) -> None:
         widget.clear()
         self._clear_legend(widget)
         self._clear_colorbar(widget)
         plot_item = widget.getPlotItem()
-        plot_item.hideAxis("left")
-        plot_item.getAxis("left").setStyle(showValues=False)
-        plot_item.showAxis("bottom")
-        plot_item.showGrid(x=False, y=False)
+        self._style_1d_plot(plot_item)
 
         x_numeric = self._coerce_array(spec.x, fallback_range=True)
-        intensities = self._coerce_array(spec.y)
-        if intensities.shape[0] != x_numeric.shape[0]:
-            intensities = np.ones_like(x_numeric, dtype=float)
-
         if x_numeric.size == 0:
             widget.setLabel("bottom", spec.x_label or "X Axis")
             widget.setYRange(0, 1, padding=0)
             return
 
-        x_numeric, intensities = self._bin_events(x_numeric, intensities, _MAX_EVENT_BINS)
+        x_numeric = self._coerce_eventline_x(x_numeric, _MAX_EVENT_BINS)
         if x_numeric.size == 0:
             widget.setLabel("bottom", spec.x_label or "X Axis")
             widget.setYRange(0, 1, padding=0)
@@ -192,29 +175,20 @@ class PlotRenderer:
         x_min = float(np.nanmin(x_numeric))
         x_max = float(np.nanmax(x_numeric))
         span = x_max - x_min if x_max != x_min else 1.0
-        bar_width = max(span * 0.01, span / max(len(x_numeric) * 2, 1))
+        bar_width = max(span * 0.001, span / max(len(x_numeric) * 10, 1))
 
-        cmap = pg.colormap.get("viridis")
-        levels = (float(np.nanmin(intensities)), float(np.nanmax(intensities)))
-        if levels[0] == levels[1]:
-            levels = (levels[0], levels[0] + 1e-9)
-        lut = cmap.getLookupTable(nPts=512, alpha=False)
-        scale = (intensities - levels[0]) / (levels[1] - levels[0])
-        idx = np.clip((scale * (len(lut) - 1)).astype(int), 0, len(lut) - 1)
-        colors = [pg.mkColor(lut[i]) for i in idx]
-
-        bars = pg.BarGraphItem(x=x_numeric, height=np.ones_like(x_numeric), width=bar_width, brushes=colors, pens=colors)
+        bars = pg.BarGraphItem(
+            x=x_numeric,
+            height=np.ones_like(x_numeric),
+            width=bar_width,
+            brushes=[(0, 0, 0, 180)] * len(x_numeric),
+            pens=[(0, 0, 0, 180)] * len(x_numeric),
+        )
         plot_item.addItem(bars)
 
-        self._insert_colorbar(
-            widget,
-            pg.ColorBarItem(values=levels, colorMap=cmap),
-            label=spec.y_label or "Intensity",
-        )
-
-        widget.setLabel("bottom", spec.x_label or "X Axis")
+        widget.setLabel("bottom", None)
         widget.setYRange(0, 1, padding=0)
-        widget.showGrid(x=True, y=True, alpha=0.1)
+        widget.showGrid(x=False, y=False)
 
     def _clear_colorbar(self, widget: pg.PlotWidget) -> None:
         colorbars = self._colorbars.pop(id(widget), [])
@@ -350,36 +324,72 @@ class PlotRenderer:
         centers = (bins[:-1] + bins[1:]) / 2.0
         return centers, agg
 
+    def _style_1d_plot(self, plot_item: pg.PlotItem) -> None:
+        plot_item.hideAxis("left")
+        plot_item.getAxis("left").setStyle(showValues=False)
+        plot_item.hideAxis("bottom")
+        axis = plot_item.getAxis("bottom")
+        try:
+            axis.setStyle(showValues=False, tickLength=0)
+            axis.setPen(None)
+            axis.setTextPen(None)
+        except Exception:
+            pass
+        plot_item.showGrid(x=False, y=False)
+        vb = plot_item.getViewBox()
+        try:
+            vb.setMouseEnabled(y=False)
+            vb.setLimits(yMin=0.0, yMax=1.0, minYRange=1.0, maxYRange=1.0)
+        except Exception:
+            pass
+        plot_item.setRange(yRange=(0, 1), padding=0)
+
     def _resample_colormap(
-        self, x_numeric: np.ndarray, values: np.ndarray, max_samples: int
+        self, x_numeric: np.ndarray, values: np.ndarray, target_bins: int
     ) -> tuple[np.ndarray, np.ndarray]:
-        if x_numeric.size <= max_samples or x_numeric.size == 0:
+        if x_numeric.size == 0 or values.size == 0:
             return x_numeric, values
         x_min = float(np.nanmin(x_numeric))
         x_max = float(np.nanmax(x_numeric))
         if not np.isfinite(x_min) or not np.isfinite(x_max) or x_min == x_max:
-            return self._downsample_1d(x_numeric, values, max_samples)
-        bins = np.linspace(x_min, x_max, max_samples + 1)
+            return self._downsample_1d(x_numeric, values, target_bins)
+        bins = np.linspace(x_min, x_max, target_bins + 1)
         idx = np.digitize(x_numeric, bins) - 1
-        agg = np.zeros(max_samples, dtype=float)
-        has_val = np.zeros(max_samples, dtype=bool)
+        agg = np.zeros(target_bins, dtype=float)
+        has_val = np.zeros(target_bins, dtype=bool)
         for val, bin_idx in zip(values, idx):
-            if 0 <= bin_idx < max_samples:
+            if 0 <= bin_idx < target_bins:
                 if not has_val[bin_idx] or abs(val) > abs(agg[bin_idx]):
                     agg[bin_idx] = val
                     has_val[bin_idx] = True
         centers = (bins[:-1] + bins[1:]) / 2.0
         return centers, agg
 
+    def _coerce_eventline_x(self, x_numeric: np.ndarray, max_bins: int) -> np.ndarray:
+        if x_numeric.size <= max_bins:
+            return x_numeric
+        x_min = float(np.nanmin(x_numeric))
+        x_max = float(np.nanmax(x_numeric))
+        if not np.isfinite(x_min) or not np.isfinite(x_max) or x_min == x_max:
+            stride = int(np.ceil(x_numeric.size / max_bins))
+            return x_numeric[::stride]
+        bins = np.linspace(x_min, x_max, max_bins + 1)
+        idx = np.digitize(x_numeric, bins) - 1
+        centers = (bins[:-1] + bins[1:]) / 2.0
+        seen = np.zeros(max_bins, dtype=bool)
+        kept: list[float] = []
+        for bin_idx in idx:
+            if 0 <= bin_idx < max_bins and not seen[bin_idx]:
+                kept.append(float(centers[bin_idx]))
+                seen[bin_idx] = True
+        return np.asarray(kept, dtype=float)
+
     def _render_one_dimensional_overlay(self, widget: pg.PlotWidget, specs: list[PlotSpec]) -> None:
         self._clear_legend(widget)
         self._clear_colorbar(widget)
         widget.clear()
         plot_item = widget.getPlotItem()
-        plot_item.hideAxis("left")
-        plot_item.getAxis("left").setStyle(showValues=False)
-        plot_item.showAxis("bottom")
-        plot_item.showGrid(x=False, y=False)
+        self._style_1d_plot(plot_item)
         cmap_names = ["viridis", "plasma", "cividis", "magma", "turbo"]
 
         for idx, spec in enumerate(specs):
@@ -389,16 +399,17 @@ class PlotRenderer:
             elif spec.visualization == VisualizationType.EVENTLINE:
                 self._render_eventline_with(widget, spec, cmap)
 
-        widget.setLabel("bottom", specs[0].x_label or "X Axis")
+        widget.setLabel("bottom", None)
         widget.setYRange(0, 1, padding=0)
-        widget.showGrid(x=True, y=True, alpha=0.1)
+        widget.showGrid(x=False, y=False)
 
     def _render_colormap_with(self, widget: pg.PlotWidget, spec: PlotSpec, cmap: pg.ColorMap) -> None:
         values = self._coerce_array(spec.y)
         if values.size == 0:
             return
         x_numeric = self._coerce_array(spec.x, fallback_range=True)
-        x_numeric, values = self._resample_colormap(x_numeric, values, _MAX_1D_SAMPLES)
+        target_bins = min(_MAX_1D_SAMPLES, max(1, values.size))
+        x_numeric, values = self._resample_colormap(x_numeric, values, target_bins)
         rect = self._compute_rect(x_numeric, len(values))
 
         image = values.reshape(1, -1)
@@ -409,12 +420,6 @@ class PlotRenderer:
         levels = (float(np.nanmin(values)), float(np.nanmax(values)))
         image_item.setLevels(levels)
         widget.addItem(image_item)
-        self._insert_colorbar(
-            widget,
-            pg.ColorBarItem(values=levels, colorMap=cmap),
-            image_item=image_item,
-            label=(spec.label or spec.y_label or "Intensity"),
-        )
 
     def _render_eventline_with(self, widget: pg.PlotWidget, spec: PlotSpec, cmap: pg.ColorMap) -> None:
         x_numeric = self._coerce_array(spec.x, fallback_range=True)
@@ -444,9 +449,3 @@ class PlotRenderer:
 
         bars = pg.BarGraphItem(x=x_numeric, height=np.ones_like(x_numeric), width=bar_width, brushes=colors, pens=colors)
         widget.addItem(bars)
-
-        self._insert_colorbar(
-            widget,
-            pg.ColorBarItem(values=levels, colorMap=cmap),
-            label=(spec.label or spec.y_label or "Intensity"),
-        )

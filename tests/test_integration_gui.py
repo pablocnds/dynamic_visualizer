@@ -68,7 +68,7 @@ def test_eventline_card_renders_items(app: QtWidgets.QApplication) -> None:  # n
     assert not [m for m in messages if "invalid row" in m or "Scale" in m]
 
 
-def test_one_dim_overlay_has_multiple_colorbars(app: QtWidgets.QApplication) -> None:  # noqa: ARG001
+def test_one_dim_overlay_has_no_colorbars(app: QtWidgets.QApplication) -> None:  # noqa: ARG001
     window = _create_window()
     card_path = window._cards_dir / "10-overlay_1d_card.toml"  # type: ignore[attr-defined]
     window._activate_card(card_path)
@@ -76,41 +76,39 @@ def test_one_dim_overlay_has_multiple_colorbars(app: QtWidgets.QApplication) -> 
     assert plot is not None
     scene = plot.getPlotItem().scene()
     colorbars = [item for item in scene.items() if isinstance(item, pg.ColorBarItem)]
-    assert len(colorbars) >= 2
+    assert len(colorbars) == 0
 
 
-def test_colorbars_do_not_stack_across_card_switches(app: QtWidgets.QApplication) -> None:  # noqa: ARG001
+def test_colorbars_absent_for_1d_cards(app: QtWidgets.QApplication) -> None:  # noqa: ARG001
     window = _create_window()
     window._activate_card(window._cards_dir / "8-colormap_card.toml")  # type: ignore[attr-defined]
     plot = window._panel_plots[0] if window._panel_plots else None  # type: ignore[attr-defined]
     assert plot is not None
     scene = plot.getPlotItem().scene()
-    initial_colorbars = [item for item in scene.items() if isinstance(item, pg.ColorBarItem)]
-    assert len(initial_colorbars) >= 1
+    colorbars = [item for item in scene.items() if isinstance(item, pg.ColorBarItem)]
+    assert len(colorbars) == 0
 
     window._activate_card(window._cards_dir / "9-eventline_card.toml")  # type: ignore[attr-defined]
     plot2 = window._panel_plots[0] if window._panel_plots else None  # type: ignore[attr-defined]
     assert plot2 is not None
     scene2 = plot2.getPlotItem().scene()
     colorbars_after = [item for item in scene2.items() if isinstance(item, pg.ColorBarItem)]
-    assert len(colorbars_after) <= 2
+    assert len(colorbars_after) == 0
 
 
-def test_colorbars_do_not_stack_within_same_card_rerender(app: QtWidgets.QApplication) -> None:  # noqa: ARG001
+def test_colorbars_absent_after_rerender(app: QtWidgets.QApplication) -> None:  # noqa: ARG001
     window = _create_window()
     window._activate_card(window._cards_dir / "10-overlay_1d_card.toml")  # type: ignore[attr-defined]
     plot = window._panel_plots[0] if window._panel_plots else None  # type: ignore[attr-defined]
     assert plot is not None
     scene = plot.getPlotItem().scene()
     first_colorbars = [item for item in scene.items() if isinstance(item, pg.ColorBarItem)]
-    assert len(first_colorbars) >= 2
+    assert len(first_colorbars) == 0
 
-    # Force rerender (simulates view change)
     window._render_current_card_selection()
     scene2 = plot.getPlotItem().scene()
     second_colorbars = [item for item in scene2.items() if isinstance(item, pg.ColorBarItem)]
-    assert len(second_colorbars) >= 2
-    assert len(second_colorbars) == len(first_colorbars)
+    assert len(second_colorbars) == 0
 
 
 def test_synchronized_axes_hide_redundant_bottom_axes(app: QtWidgets.QApplication) -> None:  # noqa: ARG001

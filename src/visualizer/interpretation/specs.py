@@ -37,7 +37,7 @@ class PlotSpec:
     dataset_id: str
     label: str | None
     x: Sequence[float | str]
-    y: Sequence[float]
+    y: Sequence[float] | Sequence[float | str]
     x_label: str | None
     y_label: str | None
     visualization: VisualizationType

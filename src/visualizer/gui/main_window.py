@@ -457,8 +457,6 @@ class MainWindow(QtWidgets.QMainWindow):
             combo_factory=None,
             synchronize_x_axis=self._card_session.definition.synchronize_axis if self._card_session else False,
         )
-        if self._card_session and self._card_session.definition.synchronize_axis:
-            self._panel_manager.synchronize_x_axes()
         # render newly built panels
         for subcard, entries, _ in panels:
             self._panel_manager.set_latest_panel_data(subcard.name, entries)
@@ -702,8 +700,8 @@ class MainWindow(QtWidgets.QMainWindow):
             warning = self._build_panel_layout(panels)
         else:
             warning = self._update_existing_panels(panels)
-            if self._card_session and self._card_session.definition.synchronize_axis:
-                self._panel_manager.synchronize_x_axes()
+        if self._card_session and self._card_session.definition.synchronize_axis:
+            self._panel_manager.synchronize_x_axes()
         selection_text = ", ".join(
             f"{var}={value}" for var, value in sorted(self._card_session.selection.items())
         )

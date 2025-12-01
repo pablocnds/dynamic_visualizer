@@ -77,6 +77,21 @@ def test_overlay_rejects_mixed_dimensions(app: QtWidgets.QApplication) -> None:
         renderer.render_multiple(widget, specs)
 
 
+def test_eventline_accepts_single_dimension(app: QtWidgets.QApplication) -> None:
+    renderer = PlotRenderer()
+    widget = pg.PlotWidget()
+    spec = PlotSpec(
+        dataset_id="d5",
+        label=None,
+        x=[1, 2, 3],
+        y=[],
+        x_label="time",
+        y_label=None,
+        visualization=VisualizationType.EVENTLINE,
+    )
+    renderer.render(widget, spec)
+
+
 def test_overlay_allows_one_dimensional_mix(app: QtWidgets.QApplication) -> None:
     renderer = PlotRenderer()
     widget = pg.PlotWidget()
@@ -119,8 +134,8 @@ def test_colormap_rect_alignment(app: QtWidgets.QApplication) -> None:
     image_items = [item for item in widget.getPlotItem().items if isinstance(item, pg.ImageItem)]
     assert image_items
     rect = image_items[0].mapRectToParent(image_items[0].boundingRect())
-    assert rect.left() == pytest.approx(5.0)
-    assert rect.right() == pytest.approx(35.0)
+    assert rect.left() == pytest.approx(10.0)
+    assert rect.right() == pytest.approx(30.0)
 
 
 def test_colormap_downsample_keeps_peak_position(app: QtWidgets.QApplication) -> None:

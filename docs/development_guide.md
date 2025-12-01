@@ -4,11 +4,11 @@
 Desktop GUI (PySide6 + PyQtGraph) that loads CSV/JSON data, infers sensible defaults, and lets users switch visualization styles or apply TOML “cards” for richer layouts and overlays.
 
 ## Architecture Snapshot
-- **Data access:** `DatasetRepository` loads CSV/JSON with length/number validation, coerces types, caches by path+mtime. Dataset discovery is recursive when a folder is chosen.
+- **Data access:** `DatasetRepository` loads CSV/JSON with length/number validation, coerces types, caches by path+mtime. JSON payloads are schema-validated when `jsonschema` is installed. Dataset discovery is recursive when a folder is chosen.
 - **Interpretation:** `DefaultInterpreter` maps a dataset to `PlotSpec`, infers line vs scatter (monotonic numeric X → line), and sorts X/Y for line plots.
-- **Visualization:** `PlotRenderer` draws single or multiple specs on PyQtGraph widgets, including 1-D colormap strips and event lines; caching of rendered charts is planned for large datasets.
-- **GUI/orchestration:** `MainWindow` handles folder selection (no default path), file list, cards list, variable selectors, navigation via `pivot_chart`, reset view, optional synchronized axes across compound plots, and persists last-used data/card paths between runs.
-- **Cards:** Parsed by `CardLoader`; `CardSession` resolves variables, enforces pivot for multi-variable cards, supports subcards and overlays. `chart_style` defaults cascade: per-series → subcard → global. `overlay_variable` lets overlays auto-enumerate series (e.g., multiple fragments) without exposing them as selectable variables.
+- **Visualization:** `PlotRenderer` draws single or multiple specs on PyQtGraph widgets, including 1-D colormap strips and event lines; caching/decimation hooks are still planned for large datasets.
+- **Controller/orchestration:** `SessionController` owns card loading, matching, selection, and panel planning (including overlay expansion). `MainWindow` handles only the PySide6 widgets and delegates data/card logic to the controller.
+- **Cards:** Parsed by `CardLoader`; `CardSession` resolves variables, enforces pivot for multi-variable cards, supports subcards and overlays. `chart_style` now supports structured styles (`{ name = \"line\", ... }`) that flow through to the visualization registry; defaults cascade: per-series → subcard → global. `overlay_variable` lets overlays auto-enumerate series (e.g., multiple fragments) without exposing them as selectable variables.
 
 ## Data Contracts
 - CSV: at least two columns; prefers `x_axis`/`y_axis`, otherwise uses the first two; lengths must match; Y must be numeric.

@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import glob
 import os
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
-import re
+from typing import Any, Dict, List, Optional, Tuple
 
 from .utils import _template_to_glob, _template_to_regex
+from visualizer.interpretation.specs import VisualizationType
+from visualizer.viz.registry import get_default_registry
 
 
 @dataclass(frozen=True)
@@ -17,7 +19,7 @@ class SubcardDefinition:
     variables: Tuple[str, ...]
     filepaths: List[str]
     overlay_variable: Optional[str] = None
-    chart_style: Optional[str] = None
+    chart_style: Optional["ChartStyle"] = None
     chart_height: Optional[float] = None
 
 
@@ -26,7 +28,7 @@ class CardDefinition:
     path: Path
     subcards: Tuple[SubcardDefinition, ...]
     variables: Tuple[str, ...]
-    chart_style: Optional[str] = None
+    chart_style: Optional["ChartStyle"] = None
     pivot_variable: Optional[str] = None
     overlay_panels: Dict[str, "OverlayDefinition"] = field(default_factory=dict)
     variable_filters: Dict[str, str] = field(default_factory=dict)
@@ -40,6 +42,16 @@ class CardDefinition:
 class CardMatch:
     path: Path
     variables: Dict[str, str]
+
+
+@dataclass(frozen=True)
+class ChartStyle:
+    name: str
+    params: Dict[str, Any] = field(default_factory=dict)
+
+    def visualization(self) -> VisualizationType:
+        registry = get_default_registry()
+        return registry.visualization_for_style(self.name)
 
 
 @dataclass
@@ -156,7 +168,7 @@ class CardSession:
         self,
         overlay_def: OverlayDefinition,
         variables: Dict[str, str],
-        fallback_style: Optional[str] = None,
+        fallback_style: Optional[ChartStyle] = None,
     ) -> OverlaySeries:
         series_defs: List[SeriesDefinition] = []
         styles = overlay_def.chart_styles
@@ -208,7 +220,7 @@ class CardSession:
 class OverlayDefinition:
     name: str
     filepaths: List[str]
-    chart_styles: List[Optional[str]]
+    chart_styles: List[Optional[ChartStyle]]
     overlay_variable: Optional[str] = None
     overlay_labels: Optional[List[Optional[str]]] = None
     overlay_path_filter: Optional[str] = None
@@ -217,7 +229,7 @@ class OverlayDefinition:
 @dataclass(frozen=True)
 class SeriesDefinition:
     path: Path
-    chart_style: Optional[str]
+    chart_style: Optional[ChartStyle]
     label: Optional[str] = None
 
 

@@ -6,6 +6,7 @@ from visualizer.cards.loader import CardLoader
 from visualizer.cards.models import (
     CardDefinition,
     CardMatch,
+    ChartStyle,
     CardSession,
     OverlayDefinition,
     SubcardDefinition,
@@ -20,7 +21,7 @@ def test_load_simple_card_definition() -> None:
     definition = loader.load_definition(card_path)
 
     assert "complex_study" in definition.subcards[0].filepath_template
-    assert definition.chart_style == "line"
+    assert definition.chart_style and definition.chart_style.name == "line"
     assert definition.variables == ("DATASET",)
 
 
@@ -80,7 +81,10 @@ def test_composite_card_subcard_chart_styles() -> None:
     card_path = cards_dir / "4-compound_composite_card.toml"
     definition = loader.load_definition(card_path)
 
-    styles = {subcard.name: subcard.chart_style for subcard in definition.subcards}
+    styles = {
+        subcard.name: (subcard.chart_style.name if subcard.chart_style else None)
+        for subcard in definition.subcards
+    }
     assert styles == {"time_series": None, "scatter": "scatter"}
 
 
@@ -128,7 +132,7 @@ def test_overlay_series_falls_back_to_global_style() -> None:
             ),
         ),
         variables=(),
-        chart_style="line",
+        chart_style=ChartStyle("line"),
         pivot_variable=None,
         overlay_panels={
             "overlay": OverlayDefinition(
@@ -147,7 +151,7 @@ def test_overlay_series_falls_back_to_global_style() -> None:
     overlay_def = definition.overlay_panels["overlay"]
     series = session._build_overlay_series(overlay_def, session.selection).series
 
-    assert [entry.chart_style for entry in series] == ["line", "line"]
+    assert [entry.chart_style.name if entry.chart_style else None for entry in series] == ["line", "line"]
 
 
 def test_overlay_variable_auto_discovers_series(tmp_path: Path) -> None:
@@ -171,15 +175,15 @@ def test_overlay_variable_auto_discovers_series(tmp_path: Path) -> None:
                 overlay_variable="FRAG",
                 chart_style=None,
                 chart_height=None,
-            ),
         ),
-        variables=("CLASS",),
-        chart_style="scatter",
-        pivot_variable="CLASS",
-        overlay_panels={
-            "overlay": OverlayDefinition(
-                name="overlay",
-                filepaths=[template],
+    ),
+    variables=("CLASS",),
+    chart_style=ChartStyle("scatter"),
+    pivot_variable="CLASS",
+    overlay_panels={
+        "overlay": OverlayDefinition(
+            name="overlay",
+            filepaths=[template],
                 chart_styles=[None],
                 overlay_variable="FRAG",
             )
@@ -263,12 +267,12 @@ def test_overlay_series_falls_back_to_subcard_style() -> None:
                 variables=(),
                 filepaths=["/tmp/a.json", "/tmp/b.json"],
                 overlay_variable=None,
-                chart_style="scatter",
+                chart_style=ChartStyle("scatter"),
                 chart_height=None,
             ),
         ),
         variables=(),
-        chart_style="line",
+        chart_style=ChartStyle("line"),
         pivot_variable=None,
         overlay_panels={
             "overlay": OverlayDefinition(
@@ -288,10 +292,13 @@ def test_overlay_series_falls_back_to_subcard_style() -> None:
     series = session._build_overlay_series(
         overlay_def,
         session.selection,
-        fallback_style="scatter",
+        fallback_style=ChartStyle("scatter"),
     ).series
 
-    assert [entry.chart_style for entry in series] == ["scatter", "scatter"]
+    assert [entry.chart_style.name if entry.chart_style else None for entry in series] == [
+        "scatter",
+        "scatter",
+    ]
 
 
 def test_wildcard_requires_single_match(tmp_path: Path) -> None:

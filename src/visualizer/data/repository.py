@@ -6,6 +6,10 @@ from pathlib import Path
 from typing import Dict, Iterable, List, Sequence
 
 import pandas as pd
+try:
+    import jsonschema
+except ImportError:  # pragma: no cover - optional dependency for schema validation
+    jsonschema = None
 
 from .models import Dataset
 
@@ -24,6 +28,21 @@ class DatasetRepository:
     def __init__(self, schema_path: Path | None = None) -> None:
         self._cache: Dict[Path, CachedEntry] = {}
         self._schema_path = schema_path or Path(__file__).resolve().parents[2] / "schema" / "data_payload.schema.json"
+        self._json_validator = self._load_json_validator()
+        self._schema_validation_enabled = self._json_validator is not None
+
+    @property
+    def schema_validation_enabled(self) -> bool:
+        return self._schema_validation_enabled
+
+    def _load_json_validator(self):
+        if jsonschema is None:
+            return None
+        try:
+            schema = json.loads(self._schema_path.read_text())
+            return jsonschema.Draft202012Validator(schema)
+        except Exception:
+            return None
 
     def list_datasets(self, root: Path) -> List[Path]:
         files: List[Path] = []
@@ -76,6 +95,7 @@ class DatasetRepository:
 
     def _load_json(self, path: Path) -> Dataset:
         payload = json.loads(path.read_text())
+        self._validate_json_schema(payload, path)
         self._validate_json_payload(payload, path)
         data_section = payload.get("data") or {}
         x_series = list(data_section.get("x_axis") or [])
@@ -97,6 +117,14 @@ class DatasetRepository:
             y_label=data_section.get("y_label"),
             metadata={k: v for k, v in payload.items() if k != "data"},
         )
+
+    def _validate_json_schema(self, payload: dict, path: Path) -> None:
+        if not self._json_validator:
+            return
+        try:
+            self._json_validator.validate(payload)
+        except jsonschema.ValidationError as exc:
+            raise ValueError(f"JSON schema validation failed for {path}: {exc.message}") from exc
 
     def _validate_json_payload(self, payload: dict, path: Path) -> None:
         if not isinstance(payload, dict):

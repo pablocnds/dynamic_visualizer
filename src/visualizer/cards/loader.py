@@ -8,7 +8,14 @@ from typing import Dict, List, Optional, Tuple
 
 import tomllib
 
-from .models import CardDefinition, CardMatch, OverlayDefinition, SubcardDefinition, SeriesDefinition
+from .models import (
+    CardDefinition,
+    CardMatch,
+    ChartStyle,
+    OverlayDefinition,
+    SubcardDefinition,
+    SeriesDefinition,
+)
 from .utils import _template_to_glob, _template_to_regex
 
 MAX_MATCHES = 1000
@@ -34,7 +41,7 @@ class CardLoader:
             or global_section.get("filepath")
             or data.get("card", {}).get("filepath")
         )
-        chart_style = data.get("chart_style") or global_section.get("chart_style")
+        chart_style = _parse_chart_style(data.get("chart_style") or global_section.get("chart_style"))
         pivot = data.get("pivot_chart") or global_section.get("pivot_chart")
         synchronize_axis = bool(global_section.get("synchronize_axis", False))
         subcards_section = data.get("subcards") or {}
@@ -87,7 +94,7 @@ class CardLoader:
                         name=name,
                         filepath_template=str(match_template),
                         variables=_remove_overlay_variable(extracted_vars, overlay_var),
-                        chart_style=_maybe_list_first(config.get("chart_style")),
+                        chart_style=_maybe_first_style(config.get("chart_style")),
                         chart_height=_parse_chart_height(config.get("chart_height")),
                         filepaths=filepaths,
                         overlay_variable=overlay_var,
@@ -120,7 +127,7 @@ class CardLoader:
                         name="overlay",
                         filepath_template=template,
                         variables=_remove_overlay_variable(extracted_vars, overlay_var),
-                        chart_style=_maybe_list_first(chart_style),
+                        chart_style=_maybe_first_style(chart_style),
                         filepaths=filepaths,
                         overlay_variable=overlay_var,
                     )
@@ -132,7 +139,7 @@ class CardLoader:
                         name="default",
                         filepath_template=template,
                         variables=_extract_variables(template),
-                        chart_style=_maybe_list_first(chart_style),
+                        chart_style=_maybe_first_style(chart_style),
                         filepaths=[template],
                         overlay_variable=None,
                     )
@@ -155,7 +162,7 @@ class CardLoader:
             path=path,
             subcards=tuple(subcards),
             variables=tuple(all_variables),
-            chart_style=str(chart_style) if chart_style else None,
+            chart_style=chart_style,
             pivot_variable=normalized_pivot,
             overlay_panels=overlay_panels,
             variable_filters=variable_filters,
@@ -256,23 +263,36 @@ def _extract_variables(template: object) -> Tuple[str, ...]:
     return tuple(VAR_PATTERN.findall(str(template)))
 
 
-def _maybe_list_first(value: object | None) -> Optional[str]:
+def _parse_chart_style(value: object | None) -> ChartStyle | None:
+    if value is None:
+        return None
+    if isinstance(value, ChartStyle):
+        return value
+    if isinstance(value, dict):
+        if "name" not in value:
+            raise ValueError("chart_style object must include 'name'")
+        params = {k: v for k, v in value.items() if k != "name"}
+        return ChartStyle(name=str(value["name"]), params=params)
+    return ChartStyle(name=str(value))
+
+
+def _maybe_first_style(value: object | None) -> Optional[ChartStyle]:
     if value is None:
         return None
     if isinstance(value, list) and value:
-        return str(value[0])
-    return str(value)
+        return _parse_chart_style(value[0])
+    return _parse_chart_style(value)
 
 
-def _normalize_style_list(value: object | None, expected: int) -> List[Optional[str]]:
+def _normalize_style_list(value: object | None, expected: int) -> List[Optional[ChartStyle]]:
     if value is None:
         return [None] * expected
     if isinstance(value, list):
-        styles = [str(item) if item is not None else None for item in value]
+        styles = [_parse_chart_style(item) for item in value]
         if len(styles) < expected:
             styles += [styles[-1] if styles else None] * (expected - len(styles))
         return styles
-    return [str(value)] * expected
+    return [_parse_chart_style(value)] * expected
 
 
 def _remove_overlay_variable(variables: Tuple[str, ...], overlay_variable: str | None) -> Tuple[str, ...]:

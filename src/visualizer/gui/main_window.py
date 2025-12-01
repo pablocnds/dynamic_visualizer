@@ -10,15 +10,18 @@ from visualizer.cards.loader import CardLoader
 from visualizer.cards.models import (
     CardDefinition,
     CardSession,
+    ChartStyle,
     SeriesDefinition,
     SubcardDefinition,
 )
+from visualizer.controller import PanelPlan, PanelSeries, SessionController
 from visualizer.data.models import Dataset
 from visualizer.data.repository import DatasetRepository
 from visualizer.interpretation.specs import DefaultInterpreter, PlotSpec, VisualizationType
 from visualizer.state import StateManager
 from visualizer.gui.panels import PanelManager
 from visualizer.viz.renderer import PlotRenderer
+from visualizer.viz.registry import VisualizationRegistry, get_default_registry
 
 
 class MainWindow(QtWidgets.QMainWindow):
@@ -32,19 +35,22 @@ class MainWindow(QtWidgets.QMainWindow):
         self._state_manager = StateManager()
         self._saved_state = self._state_manager.load()
         self._repository = DatasetRepository()
+        self._controller = SessionController(self._repository, cards_dir=cards_dir)
         self._interpreter = DefaultInterpreter()
         self._renderer = PlotRenderer()
+        self._viz_registry = get_default_registry()
         self._panel_manager = PanelManager(self._renderer)
         self._current_spec: Optional[PlotSpec] = None
         self._current_dataset: Optional[Dataset] = None
         self._current_path: Optional[Path] = None
-        self._card_loader = CardLoader(cards_dir) if cards_dir else None
+        self._card_loader = self._controller.card_loader
         self._card_session: Optional[CardSession] = None
         self._variable_controls: dict[str, QtWidgets.QComboBox] = {}
         self._active_card_path: Optional[Path] = None
         self._panel_overrides: Dict[str, VisualizationType | None] = {}
         self._data_dir_label: Optional[QtWidgets.QLabel] = None
         self._cards_dir_label: Optional[QtWidgets.QLabel] = None
+        self._warning_label: Optional[QtWidgets.QLabel] = None
         self._added_files: set[Path] = set()
         self._pending_card_file: Optional[Path] = None
 
@@ -91,7 +97,7 @@ class MainWindow(QtWidgets.QMainWindow):
         controls_layout.addWidget(add_button)
 
         self._visualization_combo = QtWidgets.QComboBox()
-        self._visualization_combo.addItems(["Auto", "Line", "Scatter"])
+        self._populate_visualization_combo(self._visualization_combo)
         self._visualization_combo.currentIndexChanged.connect(self._handle_visualization_change)
         controls_layout.addWidget(QtWidgets.QLabel("Visualization Mode"))
         controls_layout.addWidget(self._visualization_combo)
@@ -145,6 +151,11 @@ class MainWindow(QtWidgets.QMainWindow):
         self._status_label.installEventFilter(self)
         main_layout.addWidget(self._card_title_label)
         main_layout.addWidget(self._status_label)
+        self._warning_label = QtWidgets.QLabel("")
+        self._warning_label.setStyleSheet("color: #b58900;")
+        self._warning_label.setWordWrap(True)
+        self._warning_label.setVisible(False)
+        main_layout.addWidget(self._warning_label)
         self._update_navigation_buttons()
 
     def _load_initial_sources(self) -> None:
@@ -160,6 +171,12 @@ class MainWindow(QtWidgets.QMainWindow):
                     break
         if not self._data_dir and not self._pending_card_file:
             self._status_label.setText("Choose a data folder or add files to begin.")
+        if not self._repository.schema_validation_enabled:
+            self._set_warning(
+                "JSON schema validation is disabled (jsonschema not installed); JSON payloads are only lightly validated."
+            )
+        else:
+            self._set_warning(None)
 
     def _add_file_to_list(self, path: Path) -> None:
         for index in range(self._file_list.count()):
@@ -244,11 +261,18 @@ class MainWindow(QtWidgets.QMainWindow):
         self._draw_plot(self._single_plot_widget, self._current_dataset, self._current_path, card_style=None)
         self._status_label.setText(f"Loaded {self._current_path.name}")
 
+    def _populate_visualization_combo(self, combo: QtWidgets.QComboBox) -> None:
+        combo.blockSignals(True)
+        combo.clear()
+        combo.addItem("Auto", userData=None)
+        for handler in self._viz_registry.handlers():
+            combo.addItem(handler.label, userData=handler.visualization)
+        combo.blockSignals(False)
+
     def _load_cards(self) -> None:
-        if not self._card_loader:
-            return
         self._card_list.clear()
-        for card_path in self._card_loader.list_card_files():
+        self._card_loader = self._controller.card_loader
+        for card_path in self._controller.list_cards():
             item = QtWidgets.QListWidgetItem(card_path.name)
             item.setData(QtCore.Qt.UserRole, card_path)
             self._card_list.addItem(item)
@@ -256,6 +280,7 @@ class MainWindow(QtWidgets.QMainWindow):
     def _handle_card_selection(self) -> None:
         selected_items = self._card_list.selectedItems()
         if not selected_items:
+            self._controller.clear_card()
             self._card_session = None
             self._update_navigation_buttons()
             self._variable_group.setVisible(False)
@@ -272,19 +297,17 @@ class MainWindow(QtWidgets.QMainWindow):
             self._activate_card(Path(path))
 
     def _activate_card(self, card_path: Path) -> None:
-        if not self._card_loader:
-            return
         try:
-            definition = self._card_loader.load_definition(card_path)
-            matches = self._card_loader.resolve_paths(definition)
-            if not any(matches.values()):
+            session = self._controller.activate_card(card_path)
+            self._card_loader = self._controller.card_loader
+            if not session.has_paths():
                 self._card_session = None
                 self._status_label.setText("Card has no matching datasets.")
                 self._update_navigation_buttons()
                 self._variable_group.setVisible(False)
                 self._panel_manager.clear(self._multi_plot_layout)
                 return
-            self._card_session = CardSession(definition=definition, matches=matches)
+            self._card_session = session
             self._active_card_path = card_path
             self._panel_overrides.clear()
             self._update_navigation_buttons()
@@ -299,20 +322,24 @@ class MainWindow(QtWidgets.QMainWindow):
             self._active_card_path = None
 
     def _handle_next_view(self) -> None:
-        if not self._card_session or not self._card_session.has_paths():
+        session = self._controller.card_session
+        if not session or not session.has_paths():
             return
         try:
-            self._card_session.cycle_pivot(1)
+            self._controller.cycle_pivot(1)
+            self._card_session = self._controller.card_session
             self._sync_variable_controls()
             self._render_current_card_selection()
         except Exception as exc:  # pragma: no cover - GUI feedback
             self._status_label.setText(f"Card error: {exc}")
 
     def _handle_prev_view(self) -> None:
-        if not self._card_session or not self._card_session.has_paths():
+        session = self._controller.card_session
+        if not session or not session.has_paths():
             return
         try:
-            self._card_session.cycle_pivot(-1)
+            self._controller.cycle_pivot(-1)
+            self._card_session = self._controller.card_session
             self._sync_variable_controls()
             self._render_current_card_selection()
         except Exception as exc:  # pragma: no cover - GUI feedback
@@ -333,6 +360,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._card_list.blockSignals(True)
         self._card_list.clearSelection()
         self._card_list.blockSignals(False)
+        self._controller.clear_card()
         self._card_session = None
         self._update_navigation_buttons()
         self._variable_group.setVisible(False)
@@ -344,6 +372,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._pending_card_file = None
 
     def _update_navigation_buttons(self) -> None:
+        self._card_session = self._controller.card_session
         active = bool(
             self._card_session
             and self._card_session.has_paths()
@@ -353,7 +382,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self._next_view_button.setEnabled(active)
 
     def _set_card_loader(self, path: Path, select_card: Path | None = None) -> None:
-        self._card_loader = CardLoader(path)
+        self._controller.set_cards_dir(path)
+        self._card_loader = self._controller.card_loader
         self._cards_dir = path
         if self._cards_dir_label:
             self._cards_dir_label.setText(str(path))
@@ -403,7 +433,7 @@ class MainWindow(QtWidgets.QMainWindow):
             state["added_files"] = extras
         self._state_manager.save(state)
 
-    def _load_and_render(self, path: Path, card_style: str | None = None) -> None:
+    def _load_and_render(self, path: Path, card_style: ChartStyle | None = None) -> None:
         try:
             dataset = self._repository.load(path)
             self._current_dataset = dataset
@@ -417,20 +447,18 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _resolve_visualization_override(
         self,
-        card_style: str | None = None,
+        card_style: ChartStyle | None = None,
         panel_override: VisualizationType | None = None,
     ) -> VisualizationType | None:
         if panel_override:
             return panel_override
-        choice = self._visualization_combo.currentText()
-        if choice == "Line":
-            return VisualizationType.LINE
-        if choice == "Scatter":
-            return VisualizationType.SCATTER
+        choice = self._visualization_combo.currentData()
+        if isinstance(choice, VisualizationType):
+            return choice
         if card_style:
             try:
-                return VisualizationType.from_string(card_style)
-            except ValueError:
+                return card_style.visualization()
+            except Exception:
                 return None
         return None
 
@@ -481,14 +509,16 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _create_panel_style_combo(self, subcard_name: str) -> QtWidgets.QComboBox:
         combo = QtWidgets.QComboBox()
-        combo.addItems(["Auto", "Line", "Scatter"])
+        self._populate_visualization_combo(combo)
         override = self._panel_overrides.get(subcard_name)
-        if override == VisualizationType.LINE:
-            combo.setCurrentText("Line")
-        elif override == VisualizationType.SCATTER:
-            combo.setCurrentText("Scatter")
-        combo.currentTextChanged.connect(
-            lambda text, name=subcard_name: self._handle_panel_visualization_change(name, text)
+        if override is not None:
+            idx = combo.findData(override)
+            if idx >= 0:
+                combo.setCurrentIndex(idx)
+        combo.currentIndexChanged.connect(
+            lambda _index, name=subcard_name, combo_ref=combo: self._handle_panel_visualization_change(
+                name, combo_ref
+            )
         )
         return combo
 
@@ -497,7 +527,7 @@ class MainWindow(QtWidgets.QMainWindow):
         widget: pg.PlotWidget,
         dataset: Dataset,
         path: Path,
-        card_style: Optional[str],
+        card_style: Optional[ChartStyle],
         panel_override: VisualizationType | None = None,
     ) -> None:
         override = self._resolve_visualization_override(
@@ -509,13 +539,12 @@ class MainWindow(QtWidgets.QMainWindow):
         widget.enableAutoRange(x=True, y=True)
         self._current_spec = spec
 
-    def _handle_panel_visualization_change(self, subcard_name: str, text: str) -> None:
-        if text == "Auto":
+    def _handle_panel_visualization_change(self, subcard_name: str, combo: QtWidgets.QComboBox) -> None:
+        selection = combo.currentData()
+        if selection is None:
             self._panel_overrides.pop(subcard_name, None)
         else:
-            self._panel_overrides[subcard_name] = (
-                VisualizationType.LINE if text == "Line" else VisualizationType.SCATTER
-            )
+            self._panel_overrides[subcard_name] = selection
         self._rerender_panel(subcard_name)
 
     def _rerender_panel(self, subcard_name: str) -> None:
@@ -554,14 +583,16 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _populate_variable_controls(self) -> None:
         self._clear_variable_controls()
-        if not self._card_session or not self._card_session.definition.variables:
+        session = self._controller.card_session
+        self._card_session = session
+        if not session or not session.definition.variables:
             self._variable_group.setVisible(False)
             return
         self._variable_group.setVisible(True)
-        pivot = self._card_session.definition.pivot_variable
-        for variable in self._card_session.definition.variables:
+        pivot = session.definition.pivot_variable
+        for variable in session.definition.variables:
             combo = QtWidgets.QComboBox()
-            values = self._card_session.available_values(
+            values = self._controller.available_values(
                 variable,
                 constrained=(variable == pivot),
             )
@@ -596,14 +627,16 @@ class MainWindow(QtWidgets.QMainWindow):
         self._variable_controls.clear()
 
     def _sync_variable_controls(self) -> None:
-        if not self._card_session:
+        session = self._controller.card_session
+        self._card_session = session
+        if not session:
             return
-        pivot = self._card_session.definition.pivot_variable
+        pivot = session.definition.pivot_variable
         for variable, combo in self._variable_controls.items():
             if variable == pivot:
-                values = self._card_session.available_values(variable, constrained=True)
+                values = self._controller.available_values(variable, constrained=True)
                 self._set_combo_items(combo, values)
-            selection_value = self._card_session.selection.get(variable)
+            selection_value = session.selection.get(variable)
             self._set_combo_value(combo, selection_value)
 
     def _set_combo_items(self, combo: QtWidgets.QComboBox, values: list[str]) -> None:
@@ -622,88 +655,54 @@ class MainWindow(QtWidgets.QMainWindow):
         combo.blockSignals(False)
 
     def _handle_variable_selection(self, variable: str, value: str) -> None:
-        if not self._card_session:
+        if not self._controller.card_session:
             return
         try:
-            self._card_session.update_selection(variable, value)
+            self._controller.update_selection(variable, value)
+            self._card_session = self._controller.card_session
             self._sync_variable_controls()
             self._render_current_card_selection()
         except Exception as exc:  # pragma: no cover - GUI feedback
             self._status_label.setText(f"Card selection error: {exc}")
 
     def _render_current_card_selection(self) -> None:
-        if not self._card_session:
+        session = self._controller.card_session
+        if not session:
             return
         try:
-            match_map = self._card_session.current_matches()
+            plans, missing = self._controller.build_panel_plans()
         except Exception as exc:  # pragma: no cover - GUI feedback
             self._status_label.setText(f"Card error: {exc}")
+            self._show_error_dialog("Card error", str(exc))
             return
 
-        panels: List[
-            tuple[
-                SubcardDefinition,
-                List[tuple[Optional[Dataset], Path, Optional[str], Optional[str]]],
-                List[Path],
-            ]
-        ] = []
-        missing: List[str] = []
-
-        for subcard in self._card_session.definition.subcards:
-            match = match_map.get(subcard.name)
-            entries: List[tuple[Optional[Dataset], Path, Optional[str], Optional[str]]] = []
-            panel_paths: List[Path] = []
-            if not match:
-                missing.append(subcard.name)
-                panels.append((subcard, entries, panel_paths))
-                continue
-
-            overlay_def = self._card_session.definition.overlay_panels.get(subcard.name)
-            if overlay_def:
-                overlay_series = self._card_session._build_overlay_series(
-                    overlay_def,
-                    match.variables,
-                    fallback_style=subcard.chart_style,
-                )
-                series_list = overlay_series.series
-            else:
-                series_list = [
-                    SeriesDefinition(
-                        path=match.path,
-                        chart_style=subcard.chart_style or self._card_session.definition.chart_style,
-                    )
-                ]
-
-            for series_def in series_list:
-                panel_paths.append(series_def.path)
-                try:
-                    dataset = self._repository.load(series_def.path)
-                except Exception as exc:  # pragma: no cover - GUI feedback
-                    missing.append(f"{series_def.path.name} ({exc})")
-                    entries.append((None, series_def.path, series_def.chart_style, series_def.label))
-                    continue
-                entries.append((dataset, series_def.path, series_def.chart_style, series_def.label))
-
-            panels.append((subcard, entries, panel_paths))
-
-        if not panels:
+        self._card_session = session
+        if not plans:
             self._status_label.setText("Card selection has no matching datasets.")
             return
 
-        active_names = {subcard.name for subcard, _, _ in panels}
+        active_names = {plan.subcard.name for plan in plans}
         for name in list(self._panel_overrides.keys()):
             if name not in active_names:
                 self._panel_overrides.pop(name, None)
 
-        panel_names = [subcard.name for subcard, _, _ in panels]
+        panels: List[tuple[SubcardDefinition, List[tuple[Optional[Dataset], Path, Optional[ChartStyle], Optional[str]]], List[Path]]] = []
+        for plan in plans:
+            entries = [
+                (series.dataset, series.path, series.chart_style, series.label)
+                for series in plan.series
+            ]
+            panels.append((plan.subcard, entries, plan.paths))
+
+        panel_names = [plan.subcard.name for plan in plans]
         if panel_names != self._panel_order:
             warning = self._build_panel_layout(panels)
         else:
             warning = self._update_existing_panels(panels)
-        if self._card_session and self._card_session.definition.synchronize_axis:
+        if session.definition.synchronize_axis:
             self._panel_manager.synchronize_x_axes()
         selection_text = ", ".join(
-            f"{var}={value}" for var, value in sorted(self._card_session.selection.items())
+            f"{var}={value}" for var, value in sorted(session.selection.items())
         )
         card_label = self._active_card_path.name if self._active_card_path else "card"
         message = f"Card {card_label}: {selection_text}"
@@ -731,3 +730,22 @@ class MainWindow(QtWidgets.QMainWindow):
                 self._show_status_context_menu(event.pos())
                 return True
         return super().eventFilter(obj, event)
+
+    def _set_warning(self, message: str | None) -> None:
+        if not self._warning_label:
+            return
+        if message:
+            self._warning_label.setText(message)
+            self._warning_label.setVisible(True)
+        else:
+            self._warning_label.clear()
+            self._warning_label.setVisible(False)
+
+    def _show_error_dialog(self, title: str, details: str) -> None:
+        dialog = QtWidgets.QMessageBox(self)
+        dialog.setIcon(QtWidgets.QMessageBox.Warning)
+        dialog.setWindowTitle(title)
+        dialog.setText(title)
+        dialog.setInformativeText(details)
+        dialog.setStandardButtons(QtWidgets.QMessageBox.Ok)
+        dialog.exec()

@@ -7,7 +7,7 @@ TOML cards describe where to find datasets and how to render them. Variables are
 - Variables: `{{VAR}}` placeholders replace exactly one directory or filename segment and default to the first alphabetical value. Use named variables even when only one exists; a pivot is optional when there is only one variable.
 - Wildcard (`*`): plain glob segment only; it is not a variable and never exposed in the UI.
 - Pivot: `pivot_chart = "{{VAR}}"` identifies which variable cycles when moving prev/next.
-- Styles: `chart_style` accepts `line`, `scatter`, `colormap` (1-D heatmap strip), or `eventline` (1-D spike/event line). Subcards and overlays may override it; missing overrides fall back to the card’s global style. One-dimensional plots can overlay with each other; the renderer assigns distinct colormaps automatically.
+- Styles: `chart_style` accepts `line`, `scatter`, `colormap` (1-D heatmap strip), or `eventline` (1-D spike/event line). You can use the string shorthand (`"line"`) or an object with a `name` and optional parameters (reserved for renderer customization), e.g. `chart_style = { name = "line", width = 3 }` or `chart_style = { name = "colormap", palette = "viridis" }`. Subcards and overlays may override it; missing overrides fall back to the card’s global style. One-dimensional plots can overlay with each other; the renderer assigns distinct colormaps automatically. Aliases are accepted: `colormap_line`/`heatmap1d` → `colormap`, `events`/`spikes` → `eventline`.
 - Synchronization: compound cards may set `synchronize_axis = true` under `[global]` to link the X axis across panels (panning/zooming one updates the others).
 - Overlay discovery: `overlay_variable` marks a variable used only for overlay enumeration; it is not user-selectable and is removed from card variables/pivot logic. Variable-level filters (see below) apply to overlay variables as well; optional `overlay_path_filter` (regex on the resolved path) can further constrain entries.
 
@@ -56,7 +56,10 @@ filepath = [
   "<CARD_DIR>/../data/.../{{DATASET}}/{{CLASS}}/time_series.json",
   "<CARD_DIR>/../data/.../{{DATASET}}/{{CLASS}}/ms2_frag-{{FRAG}}_scatter.json"
 ]
-chart_style = ["line", "scatter"]  # or a single value applied to all paths
+chart_style = [
+  { name = "line" },
+  { name = "scatter", marker_size = 6 }
+]                                        # or a single value applied to all paths
 overlay_variable = "{{FRAG}}"      # auto-discovers matching files and overlays them; not exposed in the UI
 overlay_path_filter = "_relative"  # optional regex applied to the full path
 [variable_filters]

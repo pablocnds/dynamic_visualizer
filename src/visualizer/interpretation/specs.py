@@ -15,21 +15,10 @@ class VisualizationType(str, Enum):
 
     @classmethod
     def from_string(cls, value: str) -> VisualizationType:
-        normalized = value.strip().lower()
-        aliases = {
-            "colormap_line": cls.COLORMAP,
-            "colormap": cls.COLORMAP,
-            "heatmap1d": cls.COLORMAP,
-            "eventline": cls.EVENTLINE,
-            "events": cls.EVENTLINE,
-            "spikes": cls.EVENTLINE,
-        }
-        if normalized in aliases:
-            return aliases[normalized]
-        for member in cls:
-            if member.value == normalized:
-                return member
-        raise ValueError(f"Unsupported visualization type: {value}")
+        from visualizer.viz.registry import get_default_registry  # lazy import to avoid cycle
+
+        registry = get_default_registry()
+        return registry.visualization_for_style(value)
 
 
 @dataclass(frozen=True)

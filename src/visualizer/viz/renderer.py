@@ -19,7 +19,6 @@ class PlotRenderer:
         pg.setConfigOption("foreground", "k")
         self._colorbars: dict[int, list[pg.ColorBarItem]] = {}
         self._axis_pen = pg.mkPen(color=(0, 0, 0, 120), width=1)
-        self._colorbars: dict[int, list[pg.ColorBarItem]] = {}
 
     def render(self, widget: pg.PlotWidget, spec: PlotSpec) -> None:
         self._clear_legend(widget)

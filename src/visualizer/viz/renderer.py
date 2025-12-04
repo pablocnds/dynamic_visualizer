@@ -9,6 +9,7 @@ from visualizer.interpretation.specs import PlotSpec, VisualizationType
 
 _MAX_1D_SAMPLES = 10000
 _MAX_EVENT_BINS = 800
+_EVENT_BAR_WIDTH_PX = 2.0
 
 
 class PlotRenderer:
@@ -173,17 +174,15 @@ class PlotRenderer:
 
         x_min = float(np.nanmin(x_numeric))
         x_max = float(np.nanmax(x_numeric))
-        span = x_max - x_min if x_max != x_min else 1.0
-        bar_width = max(span * 0.001, span / max(len(x_numeric) * 10, 1))
-
         bars = pg.BarGraphItem(
             x=x_numeric,
             height=np.ones_like(x_numeric),
-            width=bar_width,
+            width=1.0,
             brushes=[(0, 0, 0, 180)] * len(x_numeric),
             pens=[(0, 0, 0, 180)] * len(x_numeric),
         )
         plot_item.addItem(bars)
+        self._set_event_bar_width(widget, bars, x_min, x_max)
 
         widget.setLabel("bottom", None)
         widget.setYRange(0, 1, padding=0)
@@ -383,6 +382,37 @@ class PlotRenderer:
                 seen[bin_idx] = True
         return np.asarray(kept, dtype=float)
 
+    def _set_event_bar_width(self, widget: pg.PlotWidget, bars: pg.BarGraphItem, x_min: float, x_max: float) -> None:
+        vb = widget.getPlotItem().getViewBox()
+        width = self._compute_event_bar_width(vb, x_min, x_max)
+        try:
+            bars.setOpts(width=width)
+        except Exception:
+            return
+
+        def _on_range_changed(*_args, _bars=bars, _vb=vb) -> None:
+            width_local = self._compute_event_bar_width(_vb, x_min, x_max)
+            try:
+                _bars.setOpts(width=width_local)
+            except Exception:
+                return
+
+        try:
+            vb.sigRangeChanged.connect(_on_range_changed)
+        except Exception:
+            pass
+
+    def _compute_event_bar_width(self, view_box: pg.ViewBox, x_min: float, x_max: float) -> float:
+        try:
+            px_size = view_box.viewPixelSize()
+            width_data = float(px_size[0]) * _EVENT_BAR_WIDTH_PX
+            if width_data > 0:
+                return width_data
+        except Exception:
+            pass
+        span = x_max - x_min if x_max != x_min else 1.0
+        return max(span * 0.001, span / 1000.0)
+
     def _render_one_dimensional_overlay(self, widget: pg.PlotWidget, specs: list[PlotSpec]) -> None:
         self._clear_legend(widget)
         self._clear_colorbar(widget)
@@ -435,8 +465,6 @@ class PlotRenderer:
 
         x_min = float(np.nanmin(x_numeric))
         x_max = float(np.nanmax(x_numeric))
-        span = x_max - x_min if x_max != x_min else 1.0
-        bar_width = max(span * 0.01, span / max(len(x_numeric) * 2, 1))
 
         lut = cmap.getLookupTable(nPts=512, alpha=False)
         levels = (float(np.nanmin(intensities)), float(np.nanmax(intensities)))
@@ -446,5 +474,6 @@ class PlotRenderer:
         idx = np.clip((scale * (len(lut) - 1)).astype(int), 0, len(lut) - 1)
         colors = [pg.mkColor(lut[i]) for i in idx]
 
-        bars = pg.BarGraphItem(x=x_numeric, height=np.ones_like(x_numeric), width=bar_width, brushes=colors, pens=colors)
+        bars = pg.BarGraphItem(x=x_numeric, height=np.ones_like(x_numeric), width=1.0, brushes=colors, pens=colors)
         widget.addItem(bars)
+        self._set_event_bar_width(widget, bars, x_min, x_max)

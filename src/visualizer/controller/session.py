@@ -6,13 +6,13 @@ from typing import Dict, List, Optional, Tuple
 
 from visualizer.cards.loader import CardLoader
 from visualizer.cards.models import CardSession, ChartStyle, SeriesDefinition, SubcardDefinition
-from visualizer.data.models import Dataset
+from visualizer.data.models import DataPayload
 from visualizer.data.repository import DatasetRepository
 
 
 @dataclass(frozen=True)
 class PanelSeries:
-    dataset: Optional[Dataset]
+    dataset: Optional[DataPayload]
     path: Path
     chart_style: ChartStyle | None
     label: Optional[str]
@@ -54,7 +54,7 @@ class SessionController:
             return []
         return self._card_loader.list_card_files()
 
-    def activate_card(self, card_path: Path) -> CardSession:
+    def activate_card(self, card_path: Path, preferred_selection: Dict[str, str] | None = None) -> CardSession:
         if not self._card_loader:
             self.set_cards_dir(card_path.parent)
         if not self._card_loader:
@@ -64,6 +64,8 @@ class SessionController:
         if not any(matches.values()):
             raise ValueError("Card has no matching datasets.")
         session = CardSession(definition=definition, matches=matches)
+        if preferred_selection:
+            self._apply_preferred_selection(session, preferred_selection)
         self.card_session = session
         self.active_card_path = card_path
         return session
@@ -149,3 +151,23 @@ class SessionController:
             plans.append(PanelPlan(subcard=subcard, series=series_payloads, paths=panel_paths))
 
         return plans, missing
+
+    def _apply_preferred_selection(self, session: CardSession, preferred: Dict[str, str]) -> None:
+        selection = {
+            var: value
+            for var in session.definition.variables
+            if (value := preferred.get(var)) is not None
+            and value in session.available_values(var, constrained=False)
+        }
+        if not selection:
+            return
+        session.selection.update(selection)
+        try:
+            session.current_paths()
+        except Exception:
+            session.selection = {
+                var: values[0]
+                for var, values in session.variable_values.items()
+                if values
+            }
+            session.current_paths()

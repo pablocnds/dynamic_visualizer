@@ -3,17 +3,15 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Iterable, List, Sequence
-
-import pandas as pd
+from typing import Dict, List, Sequence
 try:
     import jsonschema
 except ImportError:  # pragma: no cover - optional dependency for schema validation
     jsonschema = None
 
-from .models import Dataset
+from .models import DataKind, DataPayload, Dataset, TableDataset
 
-SUPPORTED_EXTENSIONS = (".csv", ".json")
+SUPPORTED_EXTENSIONS = (".json",)
 
 
 @dataclass
@@ -50,54 +48,57 @@ class DatasetRepository:
             files.extend(root.rglob(f"*{extension}"))
         return sorted(files)
 
-    def load(self, path: Path) -> Dataset:
+    def load(self, path: Path) -> DataPayload:
         path = path.expanduser().resolve()
         stat = path.stat()
         cached = self._cache.get(path)
         if cached and cached.modified_ns == stat.st_mtime_ns:
             return cached.dataset
 
-        if path.suffix.lower() == ".csv":
-            dataset = self._load_csv(path)
-        elif path.suffix.lower() == ".json":
-            dataset = self._load_json(path)
-        else:
+        if path.suffix.lower() != ".json":
             raise ValueError(f"Unsupported file extension: {path.suffix}")
+        dataset = self._load_json(path)
 
         self._cache[path] = CachedEntry(modified_ns=stat.st_mtime_ns, dataset=dataset)
         return dataset
 
-    def _load_csv(self, path: Path) -> Dataset:
-        data_frame = pd.read_csv(path)
-        if data_frame.empty or len(data_frame.columns) < 2:
-            raise ValueError(f"CSV file must contain at least two columns: {path}")
-
-        x_column, y_column = self._detect_axis_columns(list(data_frame.columns))
-        x_series = data_frame[x_column].tolist()
-        y_series = data_frame[y_column].tolist()
-        self._validate_axis_lengths(x_series, y_series, path)
-
-        try:
-            x_values = self._coerce_sequence(x_series)
-            y_values = self._coerce_numeric_sequence(y_series)
-        except ValueError as exc:
-            raise ValueError(f"CSV file has non-numeric Y values: {path}") from exc
-
-        return Dataset(
-            identifier=path.stem,
-            source_path=path,
-            x=x_values,
-            y=y_values,
-            x_label=str(x_column),
-            y_label=str(y_column),
-            metadata={"columns": list(data_frame.columns)},
-        )
-
-    def _load_json(self, path: Path) -> Dataset:
+    def _load_json(self, path: Path) -> DataPayload:
         payload = json.loads(path.read_text())
         self._validate_json_schema(payload, path)
-        self._validate_json_payload(payload, path)
-        data_section = payload.get("data") or {}
+        if not isinstance(payload, dict):
+            raise ValueError(f"JSON payload must be an object: {path}")
+        data_section = payload.get("data")
+        if not isinstance(data_section, dict):
+            raise ValueError(f"JSON payload missing 'data' object: {path}")
+
+        kind = self._infer_kind(data_section, path)
+        if kind == DataKind.TABLE:
+            return self._load_table_payload(payload, data_section, path)
+        return self._load_series_payload(payload, data_section, path)
+
+    def _validate_json_schema(self, payload: dict, path: Path) -> None:
+        if not self._json_validator:
+            return
+        try:
+            self._json_validator.validate(payload)
+        except jsonschema.ValidationError as exc:
+            raise ValueError(f"JSON schema validation failed for {path}: {exc.message}") from exc
+
+    def _infer_kind(self, data_section: dict, path: Path) -> DataKind:
+        kind_value = data_section.get("kind")
+        if kind_value is not None:
+            normalized = str(kind_value).strip().lower()
+            if normalized in {"series", "plot", "xy"}:
+                return DataKind.SERIES
+            if normalized in {"table", "matrix"}:
+                return DataKind.TABLE
+            raise ValueError(f"Unsupported data kind '{kind_value}' in {path}")
+        if any(key in data_section for key in ("column_names", "row_names", "content")):
+            return DataKind.TABLE
+        return DataKind.SERIES
+
+    def _load_series_payload(self, payload: dict, data_section: dict, path: Path) -> Dataset:
+        self._validate_series_payload(data_section, path)
         x_series = list(data_section.get("x_axis") or [])
         y_series = list(data_section.get("y_axis") or [])
         self._validate_axis_lengths(x_series, y_series, path)
@@ -118,20 +119,23 @@ class DatasetRepository:
             metadata={k: v for k, v in payload.items() if k != "data"},
         )
 
-    def _validate_json_schema(self, payload: dict, path: Path) -> None:
-        if not self._json_validator:
-            return
-        try:
-            self._json_validator.validate(payload)
-        except jsonschema.ValidationError as exc:
-            raise ValueError(f"JSON schema validation failed for {path}: {exc.message}") from exc
+    def _load_table_payload(self, payload: dict, data_section: dict, path: Path) -> TableDataset:
+        self._validate_table_payload(data_section, path)
+        column_names = self._coerce_sequence(list(data_section.get("column_names") or []))
+        row_names = self._coerce_sequence(list(data_section.get("row_names") or []))
+        raw_content = data_section.get("content") or []
+        content = [self._coerce_sequence(list(row)) for row in raw_content]
 
-    def _validate_json_payload(self, payload: dict, path: Path) -> None:
-        if not isinstance(payload, dict):
-            raise ValueError(f"JSON payload must be an object: {path}")
-        data_section = payload.get("data")
-        if not isinstance(data_section, dict):
-            raise ValueError(f"JSON payload missing 'data' object: {path}")
+        return TableDataset(
+            identifier=str(payload.get("dataset") or path.stem),
+            source_path=path,
+            column_names=column_names,
+            row_names=row_names,
+            content=content,
+            metadata={k: v for k, v in payload.items() if k != "data"},
+        )
+
+    def _validate_series_payload(self, data_section: dict, path: Path) -> None:
         if "x_axis" not in data_section or "y_axis" not in data_section:
             raise ValueError(f"JSON payload missing 'x_axis'/'y_axis': {path}")
         if not isinstance(data_section["x_axis"], Sequence) or isinstance(
@@ -145,21 +149,44 @@ class DatasetRepository:
         if len(data_section["x_axis"]) == 0 or len(data_section["y_axis"]) == 0:
             raise ValueError(f"'x_axis'/'y_axis' cannot be empty: {path}")
 
-    @staticmethod
-    def _detect_axis_columns(columns: Sequence[str]) -> tuple[str, str]:
-        lowered = [c.lower() for c in columns]
-        if "x_axis" in lowered and "y_axis" in lowered:
-            x_idx = lowered.index("x_axis")
-            y_idx = lowered.index("y_axis")
-            return columns[x_idx], columns[y_idx]
-        # default to first two columns
-        return columns[0], columns[1]
+    def _validate_table_payload(self, data_section: dict, path: Path) -> None:
+        if "column_names" not in data_section or "row_names" not in data_section or "content" not in data_section:
+            raise ValueError(f"JSON table payload missing 'column_names'/'row_names'/'content': {path}")
+        if not isinstance(data_section["column_names"], Sequence) or isinstance(
+            data_section["column_names"], (str, bytes)
+        ):
+            raise ValueError(f"'column_names' must be an array: {path}")
+        if not isinstance(data_section["row_names"], Sequence) or isinstance(
+            data_section["row_names"], (str, bytes)
+        ):
+            raise ValueError(f"'row_names' must be an array: {path}")
+        if not isinstance(data_section["content"], Sequence) or isinstance(
+            data_section["content"], (str, bytes)
+        ):
+            raise ValueError(f"'content' must be an array of rows: {path}")
+        if len(data_section["column_names"]) == 0 or len(data_section["row_names"]) == 0:
+            raise ValueError(f"'column_names'/'row_names' cannot be empty: {path}")
+        if len(data_section["content"]) == 0:
+            raise ValueError(f"'content' cannot be empty: {path}")
+        expected_cols = len(data_section["column_names"])
+        expected_rows = len(data_section["row_names"])
+        if len(data_section["content"]) != expected_rows:
+            raise ValueError(f"Row count mismatch between 'row_names' and 'content' in {path}")
+        for idx, row in enumerate(data_section["content"]):
+            if not isinstance(row, Sequence) or isinstance(row, (str, bytes)):
+                raise ValueError(f"Row {idx} in 'content' must be an array: {path}")
+            if len(row) != expected_cols:
+                raise ValueError(
+                    f"Column count mismatch in row {idx} (expected {expected_cols}) in {path}"
+                )
 
     @staticmethod
-    def _coerce_sequence(values: Sequence) -> List[float | str]:
-        coerced: List[float | str] = []
+    def _coerce_sequence(values: Sequence) -> List[float | str | bool]:
+        coerced: List[float | str | bool] = []
         for value in values:
-            if isinstance(value, (int, float)):
+            if isinstance(value, bool):
+                coerced.append(value)
+            elif isinstance(value, (int, float)):
                 coerced.append(float(value))
             else:
                 try:
@@ -179,7 +206,7 @@ class DatasetRepository:
 
     @staticmethod
     def _validate_axis_lengths(
-        x_values: Sequence[float | str], y_values: Sequence[float], path: Path
+        x_values: Sequence[float | str | bool], y_values: Sequence[float], path: Path
     ) -> None:
         if len(x_values) != len(y_values):
             raise ValueError(f"Length mismatch between x_axis and y_axis in {path}")

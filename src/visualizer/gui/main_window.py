@@ -15,12 +15,13 @@ from visualizer.cards.models import (
     SubcardDefinition,
 )
 from visualizer.controller import PanelPlan, PanelSeries, SessionController
-from visualizer.data.models import Dataset
+from visualizer.data.models import DataPayload, Dataset, TableDataset
 from visualizer.data.repository import DatasetRepository
 from visualizer.interpretation.specs import DefaultInterpreter, PlotSpec, VisualizationType
 from visualizer.state import StateManager
 from visualizer.gui.panels import PanelManager
 from visualizer.viz.renderer import PlotRenderer
+from visualizer.viz.table_renderer import TableRenderer, TableView
 from visualizer.viz.registry import VisualizationRegistry, get_default_registry
 
 
@@ -38,10 +39,11 @@ class MainWindow(QtWidgets.QMainWindow):
         self._controller = SessionController(self._repository, cards_dir=cards_dir)
         self._interpreter = DefaultInterpreter()
         self._renderer = PlotRenderer()
+        self._table_renderer = TableRenderer()
         self._viz_registry = get_default_registry()
         self._panel_manager = PanelManager(self._renderer)
         self._current_spec: Optional[PlotSpec] = None
-        self._current_dataset: Optional[Dataset] = None
+        self._current_dataset: Optional[DataPayload] = None
         self._current_path: Optional[Path] = None
         self._card_loader = self._controller.card_loader
         self._card_session: Optional[CardSession] = None
@@ -53,6 +55,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._warning_label: Optional[QtWidgets.QLabel] = None
         self._added_files: set[Path] = set()
         self._pending_card_file: Optional[Path] = None
+        self._last_variable_values: Dict[str, str] = {}
 
         self._build_ui()
         self._restore_state()
@@ -133,6 +136,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self._card_title_label.setStyleSheet("font-weight: bold;")
         self._single_plot_widget = pg.PlotWidget()
         self._plot_stack.addWidget(self._single_plot_widget)
+        self._single_table_widget = TableView()
+        self._single_table_widget.pivot_handler = self._handle_pivot_step
+        self._single_table_widget.navigation_handler = self._handle_card_list_step
+        self._plot_stack.addWidget(self._single_table_widget)
         self._multi_plot_container = QtWidgets.QWidget()
         self._multi_plot_layout = QtWidgets.QVBoxLayout(self._multi_plot_container)
         self._multi_plot_layout.setContentsMargins(0, 0, 0, 0)
@@ -206,8 +213,7 @@ class MainWindow(QtWidgets.QMainWindow):
         dialog = QtWidgets.QFileDialog(self)
         dialog.setFileMode(QtWidgets.QFileDialog.ExistingFile)
         dialog.setNameFilters([
-            "Data files (*.csv *.json)",
-            "CSV (*.csv)",
+            "Data files (*.json)",
             "JSON (*.json)",
         ])
         if dialog.exec():
@@ -257,6 +263,10 @@ class MainWindow(QtWidgets.QMainWindow):
             return
         if self._current_dataset is None or self._current_path is None:
             return
+        if isinstance(self._current_dataset, TableDataset):
+            self._plot_stack.setCurrentWidget(self._single_table_widget)
+            self._draw_table(self._single_table_widget, self._current_dataset)
+            return
         self._plot_stack.setCurrentWidget(self._single_plot_widget)
         self._draw_plot(self._single_plot_widget, self._current_dataset, self._current_path, card_style=None)
         self._status_label.setText(f"Loaded {self._current_path.name}")
@@ -298,7 +308,10 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _activate_card(self, card_path: Path) -> None:
         try:
-            session = self._controller.activate_card(card_path)
+            session = self._controller.activate_card(
+                card_path,
+                preferred_selection=self._last_variable_values if self._last_variable_values else None,
+            )
             self._card_loader = self._controller.card_loader
             if not session.has_paths():
                 self._card_session = None
@@ -313,6 +326,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self._update_navigation_buttons()
             self._populate_variable_controls()
             self._render_current_card_selection()
+            self._update_last_variable_values(session)
         except Exception as exc:  # pragma: no cover - GUI feedback
             self._card_session = None
             self._status_label.setText(f"Card error: {exc}")
@@ -322,28 +336,25 @@ class MainWindow(QtWidgets.QMainWindow):
             self._active_card_path = None
 
     def _handle_next_view(self) -> None:
-        session = self._controller.card_session
-        if not session or not session.has_paths():
-            return
-        try:
-            self._controller.cycle_pivot(1)
-            self._card_session = self._controller.card_session
-            self._sync_variable_controls()
-            self._render_current_card_selection()
-        except Exception as exc:  # pragma: no cover - GUI feedback
-            self._status_label.setText(f"Card error: {exc}")
+        self._handle_pivot_step(1)
 
     def _handle_prev_view(self) -> None:
+        self._handle_pivot_step(-1)
+
+    def _handle_pivot_step(self, step: int) -> bool:
         session = self._controller.card_session
         if not session or not session.has_paths():
-            return
+            return False
         try:
-            self._controller.cycle_pivot(-1)
+            self._controller.cycle_pivot(step)
             self._card_session = self._controller.card_session
             self._sync_variable_controls()
             self._render_current_card_selection()
+            if self._card_session:
+                self._update_last_variable_values(self._card_session)
         except Exception as exc:  # pragma: no cover - GUI feedback
             self._status_label.setText(f"Card error: {exc}")
+        return True
 
     def keyPressEvent(self, event: QtGui.QKeyEvent) -> None:  # type: ignore[override]
         if event.key() == QtCore.Qt.Key_Right and self._card_session:
@@ -438,9 +449,13 @@ class MainWindow(QtWidgets.QMainWindow):
             dataset = self._repository.load(path)
             self._current_dataset = dataset
             self._current_path = path
-            self._plot_stack.setCurrentWidget(self._single_plot_widget)
             self._panel_manager.clear(self._multi_plot_layout)
-            self._draw_plot(self._single_plot_widget, dataset, path, card_style)
+            if isinstance(dataset, TableDataset):
+                self._plot_stack.setCurrentWidget(self._single_table_widget)
+                self._draw_table(self._single_table_widget, dataset)
+            else:
+                self._plot_stack.setCurrentWidget(self._single_plot_widget)
+                self._draw_plot(self._single_plot_widget, dataset, path, card_style)
             self._status_label.setText(f"Loaded {path.name}")
         except Exception as exc:  # pragma: no cover - GUI feedback
             self._status_label.setText(f"Error: {exc}")
@@ -472,8 +487,9 @@ class MainWindow(QtWidgets.QMainWindow):
         panels: List[
             tuple[
                 SubcardDefinition,
-                List[tuple[Optional[Dataset], Path, Optional[str], Optional[str]]],
+                List[tuple[Optional[DataPayload], Path, Optional[str], Optional[str]]],
                 List[Path],
+                str,
             ]
         ],
     ) -> Optional[str]:
@@ -485,8 +501,9 @@ class MainWindow(QtWidgets.QMainWindow):
             combo_factory=None,
             synchronize_x_axis=self._card_session.definition.synchronize_axis if self._card_session else False,
         )
+        self._configure_table_pivot_handlers()
         # render newly built panels
-        for subcard, entries, _ in panels:
+        for subcard, entries, _, _ in panels:
             self._panel_manager.set_latest_panel_data(subcard.name, entries)
             self._rerender_panel(subcard.name)
         return warning
@@ -496,13 +513,15 @@ class MainWindow(QtWidgets.QMainWindow):
         panels: List[
             tuple[
                 SubcardDefinition,
-                List[tuple[Optional[Dataset], Path, Optional[str], Optional[str]]],
+                List[tuple[Optional[DataPayload], Path, Optional[str], Optional[str]]],
                 List[Path],
+                str,
             ]
         ],
     ) -> Optional[str]:
         self._panel_manager.update_titles(panels)
-        for subcard, entries, _ in panels:
+        self._configure_table_pivot_handlers()
+        for subcard, entries, _, _ in panels:
             self._panel_manager.set_latest_panel_data(subcard.name, entries)
             self._rerender_panel(subcard.name)
         return None
@@ -539,6 +558,11 @@ class MainWindow(QtWidgets.QMainWindow):
         widget.enableAutoRange(x=True, y=True)
         self._current_spec = spec
 
+    def _draw_table(self, view: QtWidgets.QTableView, dataset: TableDataset) -> None:
+        spec = self._interpreter.build_table_spec(dataset)
+        self._table_renderer.render(view, spec)
+        self._current_spec = None
+
     def _handle_panel_visualization_change(self, subcard_name: str, combo: QtWidgets.QComboBox) -> None:
         selection = combo.currentData()
         if selection is None:
@@ -549,14 +573,18 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _rerender_panel(self, subcard_name: str) -> None:
         plot = self._panel_manager.plot_by_name(subcard_name)
+        table = self._panel_manager.table_by_name(subcard_name)
         data = self._panel_manager.latest_panel_data().get(subcard_name)
+        if table:
+            self._render_table_panel(table, data or [])
+            return
         if not plot or not data:
             return
         self._renderer.reset_widget(plot)
         override = self._panel_overrides.get(subcard_name)
         specs = []
         for dataset, path, default_style, label in data:
-            if dataset is None:
+            if dataset is None or isinstance(dataset, TableDataset):
                 continue
             viz = self._resolve_visualization_override(
                 card_style=default_style,
@@ -580,6 +608,46 @@ class MainWindow(QtWidgets.QMainWindow):
                 # Incompatible overlay (e.g., mixing 1D and 2D plots); render first spec and surface message.
                 self._renderer.render(plot, specs[0])
                 self._status_label.setText(str(exc))
+
+    def _render_table_panel(
+        self,
+        view: QtWidgets.QTableView,
+        data: List[tuple[Optional[DataPayload], Path, Optional[str], Optional[str]]],
+    ) -> None:
+        entry = next(
+            (
+                (dataset, label)
+                for dataset, _path, _style, label in data
+                if isinstance(dataset, TableDataset)
+            ),
+            None,
+        )
+        if not entry:
+            view.setModel(None)
+            return
+        dataset, label = entry
+        spec = self._interpreter.build_table_spec(dataset, label=label)
+        self._table_renderer.render(view, spec)
+
+    def _configure_table_pivot_handlers(self) -> None:
+        for table in self._panel_manager.table_views():
+            if isinstance(table, TableView):
+                table.pivot_handler = self._handle_pivot_step
+                table.navigation_handler = self._handle_card_list_step
+
+    def _handle_card_list_step(self, step: int) -> bool:
+        count = self._card_list.count()
+        if count == 0:
+            return False
+        current = self._card_list.currentRow()
+        if current < 0:
+            next_row = 0 if step >= 0 else count - 1
+        else:
+            next_row = max(0, min(count - 1, current + step))
+        if next_row == current:
+            return True
+        self._card_list.setCurrentRow(next_row)
+        return True
 
     def _populate_variable_controls(self) -> None:
         self._clear_variable_controls()
@@ -662,6 +730,8 @@ class MainWindow(QtWidgets.QMainWindow):
             self._card_session = self._controller.card_session
             self._sync_variable_controls()
             self._render_current_card_selection()
+            if self._card_session:
+                self._update_last_variable_values(self._card_session)
         except Exception as exc:  # pragma: no cover - GUI feedback
             self._status_label.setText(f"Card selection error: {exc}")
 
@@ -686,13 +756,24 @@ class MainWindow(QtWidgets.QMainWindow):
             if name not in active_names:
                 self._panel_overrides.pop(name, None)
 
-        panels: List[tuple[SubcardDefinition, List[tuple[Optional[Dataset], Path, Optional[ChartStyle], Optional[str]]], List[Path]]] = []
+        panel_warnings: List[str] = []
+        panels: List[
+            tuple[
+                SubcardDefinition,
+                List[tuple[Optional[DataPayload], Path, Optional[ChartStyle], Optional[str]]],
+                List[Path],
+                str,
+            ]
+        ] = []
         for plan in plans:
             entries = [
                 (series.dataset, series.path, series.chart_style, series.label)
                 for series in plan.series
             ]
-            panels.append((plan.subcard, entries, plan.paths))
+            panel_kind, panel_warning = self._infer_panel_kind(plan.subcard.name, entries)
+            if panel_warning:
+                panel_warnings.append(panel_warning)
+            panels.append((plan.subcard, entries, plan.paths, panel_kind))
 
         panel_names = [plan.subcard.name for plan in plans]
         if panel_names != self._panel_order:
@@ -708,9 +789,36 @@ class MainWindow(QtWidgets.QMainWindow):
         message = f"Card {card_label}: {selection_text}"
         if missing:
             message += f" (missing: {', '.join(missing)})"
+        warning_bits = []
         if warning:
-            message += f" [{warning}]"
+            warning_bits.append(warning)
+        if panel_warnings:
+            warning_bits.extend(panel_warnings)
+        if warning_bits:
+            message += f" [{'; '.join(warning_bits)}]"
         self._status_label.setText(message)
+
+    def _infer_panel_kind(
+        self,
+        name: str,
+        entries: List[tuple[Optional[DataPayload], Path, Optional[ChartStyle], Optional[str]]],
+    ) -> tuple[str, str | None]:
+        datasets = [dataset for dataset, _path, _style, _label in entries if dataset is not None]
+        if not datasets:
+            return "plot", None
+        has_table = any(isinstance(dataset, TableDataset) for dataset in datasets)
+        has_plot = any(not isinstance(dataset, TableDataset) for dataset in datasets)
+        if has_table and has_plot:
+            kind = "table" if isinstance(datasets[0], TableDataset) else "plot"
+            return kind, f"{name}: mixed table/plot data; showing first dataset only"
+        if has_table and len(datasets) > 1:
+            return "table", f"{name}: table overlays not supported; showing first dataset only"
+        return ("table" if has_table else "plot"), None
+
+    def _update_last_variable_values(self, session: CardSession) -> None:
+        for var, value in session.selection.items():
+            if value:
+                self._last_variable_values[var] = value
 
     def _show_status_context_menu(self, pos: QtCore.QPoint) -> None:
         menu = QtWidgets.QMenu(self)

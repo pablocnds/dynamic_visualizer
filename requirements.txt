@@ -1,5 +1,4 @@
 # Core runtime dependencies
-pandas>=2.1
 PySide6>=6.7
 pyqtgraph>=0.13
 platformdirs>=4.2

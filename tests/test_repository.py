@@ -1,7 +1,9 @@
 from pathlib import Path
+import json
 
 import pytest
 
+from visualizer.data.models import TableDataset
 from visualizer.data.repository import DatasetRepository
 
 
@@ -19,13 +21,13 @@ def test_load_json_dataset(tmp_path: Path) -> None:
 
 def test_list_datasets_filters_supported_extensions(tmp_path: Path) -> None:
     repo = DatasetRepository()
-    (tmp_path / "a.csv").write_text("x_axis,y_axis\n0,1")
+    (tmp_path / "a.json").write_text("{\"data\": {\"x_axis\":[0], \"y_axis\":[1]}}")
     (tmp_path / "b.json").write_text("{\"data\": {\"x_axis\":[0], \"y_axis\":[1]}}")
-    (tmp_path / "ignore.txt").write_text("noop")
+    (tmp_path / "ignore.csv").write_text("noop")
 
     files = repo.list_datasets(tmp_path)
     assert len(files) == 2
-    assert all(file.suffix in {".csv", ".json"} for file in files)
+    assert all(file.suffix == ".json" for file in files)
 
 
 def test_list_datasets_recurses(tmp_path: Path) -> None:
@@ -55,3 +57,40 @@ def test_json_validation_rejects_non_numeric_y(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError):
         repo.load(bad)
+
+
+def test_load_table_dataset(tmp_path: Path) -> None:
+    table_path = tmp_path / "table.json"
+    payload = {
+        "dataset": "table_demo",
+        "data": {
+            "column_names": ["a", "b"],
+            "row_names": [1, 2],
+            "content": [[10, 20], [30, 40]],
+        },
+    }
+    table_path.write_text(json.dumps(payload))
+    repo = DatasetRepository()
+
+    dataset = repo.load(table_path)
+
+    assert isinstance(dataset, TableDataset)
+    assert list(dataset.column_names) == ["a", "b"]
+    assert list(dataset.row_names) == [1.0, 2.0]
+    assert dataset.content[0][0] == 10.0
+
+
+def test_table_validation_rejects_mismatched_dimensions(tmp_path: Path) -> None:
+    bad_table = tmp_path / "bad_table.json"
+    payload = {
+        "data": {
+            "column_names": ["a", "b"],
+            "row_names": [1, 2],
+            "content": [[10, 20]],
+        },
+    }
+    bad_table.write_text(json.dumps(payload))
+    repo = DatasetRepository()
+
+    with pytest.raises(ValueError):
+        repo.load(bad_table)

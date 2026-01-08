@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Sequence
 
-from visualizer.data.models import Dataset
+from visualizer.data.models import DataPayload, Dataset, TableDataset
 
 
 class VisualizationType(str, Enum):
@@ -25,8 +25,8 @@ class VisualizationType(str, Enum):
 class PlotSpec:
     dataset_id: str
     label: str | None
-    x: Sequence[float | str]
-    y: Sequence[float] | Sequence[float | str]
+    x: Sequence[float | str | bool]
+    y: Sequence[float] | Sequence[float | str | bool]
     x_label: str | None
     y_label: str | None
     visualization: VisualizationType
@@ -43,8 +43,36 @@ class PlotSpec:
         )
 
 
+@dataclass(frozen=True)
+class TableSpec:
+    dataset_id: str
+    label: str | None
+    column_names: Sequence[float | str | bool]
+    row_names: Sequence[float | str | bool]
+    content: Sequence[Sequence[float | str | bool]]
+
+    def cache_key(self) -> tuple:
+        return (
+            self.dataset_id,
+            self.label,
+            tuple(self.column_names),
+            tuple(self.row_names),
+            tuple(tuple(row) for row in self.content),
+        )
+
+
 class DefaultInterpreter:
     """Maps datasets to plot specs using simple heuristics."""
+
+    def build_spec(
+        self,
+        dataset: DataPayload,
+        override: VisualizationType | None = None,
+        label: str | None = None,
+    ) -> PlotSpec | TableSpec:
+        if isinstance(dataset, TableDataset):
+            return self.build_table_spec(dataset, label=label)
+        return self.build_plot_spec(dataset, override=override, label=label)
 
     def build_plot_spec(
         self,
@@ -72,13 +100,22 @@ class DefaultInterpreter:
             visualization=visualization,
         )
 
+    def build_table_spec(self, dataset: TableDataset, label: str | None = None) -> TableSpec:
+        return TableSpec(
+            dataset_id=dataset.identifier,
+            label=label or dataset.identifier,
+            column_names=list(dataset.column_names),
+            row_names=list(dataset.row_names),
+            content=[list(row) for row in dataset.content],
+        )
+
     def _infer_visualization(self, dataset: Dataset) -> VisualizationType:
         if self._is_monotonic_numeric(dataset.x):
             return VisualizationType.LINE
         return VisualizationType.SCATTER
 
     @staticmethod
-    def _is_monotonic_numeric(values: Sequence[float | str]) -> bool:
+    def _is_monotonic_numeric(values: Sequence[float | str | bool]) -> bool:
         numeric_values: list[float] = []
         for value in values:
             try:
@@ -89,7 +126,7 @@ class DefaultInterpreter:
 
     @staticmethod
     def _sort_by_numeric_x(
-        x_values: Sequence[float | str], y_values: Sequence[float]
+        x_values: Sequence[float | str | bool], y_values: Sequence[float]
     ) -> list[tuple[float | str, float]] | None:
         if len(x_values) != len(y_values):
             return None

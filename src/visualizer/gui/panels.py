@@ -7,8 +7,8 @@ from PySide6 import QtWidgets
 import pyqtgraph as pg
 
 from visualizer.cards.models import SubcardDefinition
-from visualizer.interpretation.specs import VisualizationType
 from visualizer.viz.renderer import PlotRenderer
+from visualizer.viz.table_renderer import TableView
 
 
 class PanelManager:
@@ -18,9 +18,12 @@ class PanelManager:
         self._renderer = renderer
         self._panel_widgets: List[QtWidgets.QWidget] = []
         self._panel_plots: List[pg.PlotWidget] = []
+        self._panel_tables: List[QtWidgets.QTableView] = []
         self._panel_plot_by_name: Dict[str, pg.PlotWidget] = {}
+        self._panel_table_by_name: Dict[str, QtWidgets.QTableView] = {}
         self._panel_title_by_name: Dict[str, QtWidgets.QLabel] = {}
         self._panel_order: List[str] = []
+        self._panel_kind_by_name: Dict[str, str] = {}
         self._latest_panel_data: Dict[
             str, List[tuple[object | None, Path, str | None, str | None]]
         ] = {}
@@ -37,11 +40,16 @@ class PanelManager:
         for plot in self._panel_plots:
             self._renderer.reset_widget(plot)
             plot.deleteLater()
+        for table in self._panel_tables:
+            table.deleteLater()
         self._panel_widgets.clear()
         self._panel_plots.clear()
+        self._panel_tables.clear()
         self._panel_plot_by_name.clear()
+        self._panel_table_by_name.clear()
         self._panel_title_by_name.clear()
         self._panel_order.clear()
+        self._panel_kind_by_name.clear()
         self._latest_panel_data.clear()
         self._synchronize_x = False
 
@@ -53,6 +61,7 @@ class PanelManager:
                 SubcardDefinition,
                 List[tuple[object | None, Path, str | None, str | None]],
                 List[Path],
+                str,
             ]
         ],
         combo_factory: Callable[[str], QtWidgets.QWidget] | None = None,
@@ -61,25 +70,33 @@ class PanelManager:
         self._synchronize_x = synchronize_x_axis
         stretches, warning = self._calculate_panel_stretches([p[0] for p in panels])
         ordered_names = [panel[0].name for panel in panels]
-        for idx, ((subcard, entries, paths), stretch) in enumerate(zip(panels, stretches)):
+        for idx, ((subcard, entries, paths, panel_kind), stretch) in enumerate(zip(panels, stretches)):
             panel_widget = QtWidgets.QWidget()
             panel_layout = QtWidgets.QVBoxLayout(panel_widget)
-            plot_widget = pg.PlotWidget()
-            panel_layout.addWidget(plot_widget)
+            if panel_kind == "table":
+                table_widget = TableView()
+                panel_layout.addWidget(table_widget)
+                self._panel_tables.append(table_widget)
+                self._panel_table_by_name[subcard.name] = table_widget
+            else:
+                plot_widget = pg.PlotWidget()
+                panel_layout.addWidget(plot_widget)
+                self._panel_plots.append(plot_widget)
+                self._panel_plot_by_name[subcard.name] = plot_widget
             container_layout.addWidget(panel_widget, stretch)
             self._panel_widgets.append(panel_widget)
-            self._panel_plots.append(plot_widget)
-            self._panel_plot_by_name[subcard.name] = plot_widget
             self._latest_panel_data[subcard.name] = entries
-            plot_widget.enableAutoRange(x=True, y=True)
-            if synchronize_x_axis and idx < len(panels) - 1:
-                plot_widget.hideAxis("bottom")
-                axis = plot_widget.getPlotItem().getAxis("bottom")
-                axis.setStyle(showValues=False, tickLength=0)
-                axis.setPen(None)
-                axis.setHeight(0)
-                axis.setTicks([])
-                plot_widget._bottom_axis_hidden = True  # type: ignore[attr-defined]
+            self._panel_kind_by_name[subcard.name] = panel_kind
+            if panel_kind != "table":
+                plot_widget.enableAutoRange(x=True, y=True)
+                if synchronize_x_axis and idx < len(panels) - 1:
+                    plot_widget.hideAxis("bottom")
+                    axis = plot_widget.getPlotItem().getAxis("bottom")
+                    axis.setStyle(showValues=False, tickLength=0)
+                    axis.setPen(None)
+                    axis.setHeight(0)
+                    axis.setTicks([])
+                    plot_widget._bottom_axis_hidden = True  # type: ignore[attr-defined]
             if idx < len(panels) - 1:
                 separator = QtWidgets.QFrame()
                 separator.setFrameShape(QtWidgets.QFrame.HLine)
@@ -92,7 +109,7 @@ class PanelManager:
             self.synchronize_x_axes()
         return stretches, warning
 
-    def update_titles(self, panels: List[tuple[SubcardDefinition, list, List[Path]]]) -> None:
+    def update_titles(self, panels: List[tuple[SubcardDefinition, list, List[Path], str]]) -> None:
         # titles removed from per-panel headers; no-op retained for compatibility
         return None
 
@@ -101,6 +118,12 @@ class PanelManager:
 
     def plot_by_name(self, name: str) -> pg.PlotWidget | None:
         return self._panel_plot_by_name.get(name)
+
+    def table_by_name(self, name: str) -> QtWidgets.QTableView | None:
+        return self._panel_table_by_name.get(name)
+
+    def table_views(self) -> List[QtWidgets.QTableView]:
+        return list(self._panel_tables)
 
     def latest_panel_data(self) -> Dict[str, List[tuple[object | None, Path, str | None, str | None]]]:
         return self._latest_panel_data

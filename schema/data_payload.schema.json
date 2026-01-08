@@ -7,8 +7,12 @@
     "data": {
       "type": "object",
       "additionalProperties": true,
-      "required": ["x_axis", "y_axis"],
       "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["series", "table"],
+          "description": "Optional data kind hint; defaults to auto-detection"
+        },
         "x_label": {
           "type": "string",
           "description": "Optional axis label for x-axis"
@@ -32,8 +36,40 @@
             "type": "number"
           },
           "description": "Values plotted along the Y-axis (dependent measurements)"
+        },
+        "column_names": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": ["number", "string"]
+          },
+          "description": "Column labels for table data"
+        },
+        "row_names": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": ["number", "string"]
+          },
+          "description": "Row labels for table data"
+        },
+        "content": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "array"
+          },
+          "description": "Row-major table cell values"
         }
-      }
+      },
+      "allOf": [
+        {
+          "anyOf": [
+            { "required": ["x_axis", "y_axis"] },
+            { "required": ["column_names", "row_names", "content"] }
+          ]
+        }
+      ]
     }
   }
 }

@@ -1,7 +1,7 @@
 from pathlib import Path
 
-from visualizer.data.models import Dataset
-from visualizer.interpretation.specs import DefaultInterpreter, VisualizationType
+from visualizer.data.models import Dataset, TableDataset
+from visualizer.interpretation.specs import DefaultInterpreter, TableSpec, VisualizationType
 
 
 def _dataset(values: list[float]) -> Dataset:
@@ -41,3 +41,20 @@ def test_scatter_plot_keeps_original_order() -> None:
 
     assert list(spec.x) == [3, 1, 2]
     assert list(spec.y) == [30.0, 10.0, 20.0]
+
+
+def test_table_spec_builds_from_dataset() -> None:
+    dataset = TableDataset(
+        identifier="table",
+        source_path=Path("dummy"),
+        column_names=["a", "b"],
+        row_names=[1, 2],
+        content=[[10, 20], [30, 40]],
+    )
+    interpreter = DefaultInterpreter()
+
+    spec = interpreter.build_spec(dataset)
+
+    assert isinstance(spec, TableSpec)
+    assert list(spec.column_names) == ["a", "b"]
+    assert list(spec.row_names) == [1, 2]

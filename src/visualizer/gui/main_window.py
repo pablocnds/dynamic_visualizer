@@ -6,23 +6,17 @@ from typing import Dict, List, Optional, Tuple
 from PySide6 import QtCore, QtGui, QtWidgets
 import pyqtgraph as pg
 
-from visualizer.cards.loader import CardLoader
-from visualizer.cards.models import (
-    CardDefinition,
-    CardSession,
-    ChartStyle,
-    SeriesDefinition,
-    SubcardDefinition,
-)
-from visualizer.controller import PanelPlan, PanelSeries, SessionController
+from visualizer.cards.models import CardSession, ChartStyle, SubcardDefinition
+from visualizer.controller import SessionController
 from visualizer.data.models import DataPayload, Dataset, TableDataset
 from visualizer.data.repository import DatasetRepository
 from visualizer.interpretation.specs import DefaultInterpreter, PlotSpec, VisualizationType
 from visualizer.state import StateManager
+from visualizer.gui.layout import MainWindowView
 from visualizer.gui.panels import PanelManager
 from visualizer.viz.renderer import PlotRenderer
 from visualizer.viz.table_renderer import TableRenderer, TableView
-from visualizer.viz.registry import VisualizationRegistry, get_default_registry
+from visualizer.viz.registry import get_default_registry
 
 
 class MainWindow(QtWidgets.QMainWindow):
@@ -50,119 +44,63 @@ class MainWindow(QtWidgets.QMainWindow):
         self._variable_controls: dict[str, QtWidgets.QComboBox] = {}
         self._active_card_path: Optional[Path] = None
         self._panel_overrides: Dict[str, VisualizationType | None] = {}
-        self._data_dir_label: Optional[QtWidgets.QLabel] = None
-        self._cards_dir_label: Optional[QtWidgets.QLabel] = None
-        self._warning_label: Optional[QtWidgets.QLabel] = None
         self._added_files: set[Path] = set()
         self._pending_card_file: Optional[Path] = None
         self._last_variable_values: Dict[str, str] = {}
+        self._view: MainWindowView | None = None
 
         self._build_ui()
         self._restore_state()
         self._load_initial_sources()
 
     def _build_ui(self) -> None:
-        central_widget = QtWidgets.QWidget()
-        self.setCentralWidget(central_widget)
+        self._view = MainWindowView(self)
+        self.setCentralWidget(self._view)
 
-        main_layout = QtWidgets.QVBoxLayout(central_widget)
+        controls = self._view.controls
+        visualization = self._view.visualization
+        status_panel = self._view.status_panel
+        self._controls = controls
+        self._visualization = visualization
+        self._status_panel = status_panel
 
-        content_layout = QtWidgets.QHBoxLayout()
-        main_layout.addLayout(content_layout)
+        self._data_dir_label = controls.data_dir_label
+        self._cards_dir_label = controls.cards_dir_label
+        self._file_list = controls.file_list
+        self._visualization_combo = controls.visualization_combo
+        self._variable_group = controls.variable_group
+        self._variable_form_layout = controls.variable_form_layout
+        self._card_list = controls.card_list
+        self._prev_view_button = controls.prev_view_button
+        self._next_view_button = controls.next_view_button
 
-        controls_widget = QtWidgets.QWidget()
-        controls_widget.setFixedWidth(320)
-        controls_layout = QtWidgets.QVBoxLayout(controls_widget)
-        content_layout.addWidget(controls_widget)
+        self._plot_stack = visualization.plot_stack
+        self._single_plot_widget = visualization.single_plot_widget
+        self._single_table_widget = visualization.single_table_widget
+        self._multi_plot_container = visualization.multi_plot_container
+        self._multi_plot_layout = visualization.multi_plot_layout
 
-        controls_layout.addWidget(QtWidgets.QLabel("Data Folder"))
-        self._data_dir_label = QtWidgets.QLabel("No folder selected")
-        controls_layout.addWidget(self._data_dir_label)
-        choose_folder_button = QtWidgets.QPushButton("Choose Data Folder…")
-        choose_folder_button.clicked.connect(self._handle_choose_folder)
-        controls_layout.addWidget(choose_folder_button)
+        self._card_title_label = status_panel.title_label
+        self._status_label = status_panel.status_label
+        self._warning_label = status_panel.warning_label
 
-        controls_layout.addWidget(QtWidgets.QLabel("Cards"))
-        self._cards_dir_label = QtWidgets.QLabel("No card folder selected")
-        controls_layout.addWidget(self._cards_dir_label)
-        choose_card_file_button = QtWidgets.QPushButton("Open Card File…")
-        choose_card_file_button.clicked.connect(self._handle_choose_card_file)
-        controls_layout.addWidget(choose_card_file_button)
-
-        self._file_list = QtWidgets.QListWidget()
+        controls.choose_folder_button.clicked.connect(self._handle_choose_folder)
+        controls.choose_card_file_button.clicked.connect(self._handle_choose_card_file)
         self._file_list.itemSelectionChanged.connect(self._handle_file_selection)
+        controls.add_file_button.clicked.connect(self._handle_add_file)
 
-        controls_layout.addWidget(QtWidgets.QLabel("Available Data Files"))
-        controls_layout.addWidget(self._file_list)
-
-        add_button = QtWidgets.QPushButton("Add File…")
-        add_button.clicked.connect(self._handle_add_file)
-        controls_layout.addWidget(add_button)
-
-        self._visualization_combo = QtWidgets.QComboBox()
         self._populate_visualization_combo(self._visualization_combo)
         self._visualization_combo.currentIndexChanged.connect(self._handle_visualization_change)
-        controls_layout.addWidget(QtWidgets.QLabel("Visualization Mode"))
-        controls_layout.addWidget(self._visualization_combo)
 
-        self._variable_group = QtWidgets.QGroupBox("Card Variables")
-        self._variable_form_layout = QtWidgets.QFormLayout()
-        self._variable_group.setLayout(self._variable_form_layout)
-        self._variable_group.setVisible(False)
-        controls_layout.addWidget(self._variable_group)
-
-        self._card_list = QtWidgets.QListWidget()
         self._card_list.itemSelectionChanged.connect(self._handle_card_selection)
-        controls_layout.addWidget(self._card_list)
 
-        navigation_layout = QtWidgets.QHBoxLayout()
-        self._prev_view_button = QtWidgets.QPushButton("Prev View")
-        self._next_view_button = QtWidgets.QPushButton("Next View")
         self._prev_view_button.clicked.connect(self._handle_prev_view)
         self._next_view_button.clicked.connect(self._handle_next_view)
-        navigation_layout.addWidget(self._prev_view_button)
-        navigation_layout.addWidget(self._next_view_button)
-        controls_layout.addLayout(navigation_layout)
+        controls.reset_view_button.clicked.connect(self._handle_reset_view)
 
-        reset_view_button = QtWidgets.QPushButton("Reset View")
-        reset_view_button.clicked.connect(self._handle_reset_view)
-        controls_layout.addWidget(reset_view_button)
-
-        controls_layout.addStretch()
-
-        self._plot_stack = QtWidgets.QStackedWidget()
-        self._card_title_label = QtWidgets.QLabel("")
-        self._card_title_label.setAlignment(QtCore.Qt.AlignCenter)
-        self._card_title_label.setStyleSheet("font-weight: bold;")
-        self._single_plot_widget = pg.PlotWidget()
-        self._plot_stack.addWidget(self._single_plot_widget)
-        self._single_table_widget = TableView()
         self._single_table_widget.pivot_handler = self._handle_pivot_step
         self._single_table_widget.navigation_handler = self._handle_card_list_step
-        self._plot_stack.addWidget(self._single_table_widget)
-        self._multi_plot_container = QtWidgets.QWidget()
-        self._multi_plot_layout = QtWidgets.QVBoxLayout(self._multi_plot_container)
-        self._multi_plot_layout.setContentsMargins(0, 0, 0, 0)
-        self._multi_plot_layout.setSpacing(0)
-        self._plot_stack.addWidget(self._multi_plot_container)
 
-        content_layout.addWidget(self._plot_stack, 3)
-
-        self._status_label = QtWidgets.QLabel("Select a dataset to visualize.")
-        self._status_label.setWordWrap(True)
-        self._status_label.setFrameShape(QtWidgets.QFrame.Panel)
-        self._status_label.setFrameShadow(QtWidgets.QFrame.Sunken)
-        self._status_label.setContentsMargins(8, 4, 8, 4)
-        self._status_label.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
-        self._status_label.customContextMenuRequested.connect(self._show_status_context_menu)
-        self._status_label.installEventFilter(self)
-        main_layout.addWidget(self._card_title_label)
-        main_layout.addWidget(self._status_label)
-        self._warning_label = QtWidgets.QLabel("")
-        self._warning_label.setStyleSheet("color: #b58900;")
-        self._warning_label.setWordWrap(True)
-        self._warning_label.setVisible(False)
-        main_layout.addWidget(self._warning_label)
         self._update_navigation_buttons()
 
     def _load_initial_sources(self) -> None:
@@ -819,25 +757,6 @@ class MainWindow(QtWidgets.QMainWindow):
         for var, value in session.selection.items():
             if value:
                 self._last_variable_values[var] = value
-
-    def _show_status_context_menu(self, pos: QtCore.QPoint) -> None:
-        menu = QtWidgets.QMenu(self)
-        copy_action = menu.addAction("Copy message")
-        copy_action.triggered.connect(self._copy_status_to_clipboard)
-        global_pos = self._status_label.mapToGlobal(pos)
-        menu.exec(global_pos)
-
-    def _copy_status_to_clipboard(self) -> None:
-        clipboard = QtWidgets.QApplication.clipboard()
-        if clipboard:
-            clipboard.setText(self._status_label.text())
-
-    def eventFilter(self, obj: QtCore.QObject, event: QtCore.QEvent) -> bool:  # type: ignore[override]
-        if obj is self._status_label and event.type() == QtCore.QEvent.MouseButtonPress:
-            if isinstance(event, QtGui.QMouseEvent) and event.button() == QtCore.Qt.LeftButton:
-                self._show_status_context_menu(event.pos())
-                return True
-        return super().eventFilter(obj, event)
 
     def _set_warning(self, message: str | None) -> None:
         if not self._warning_label:

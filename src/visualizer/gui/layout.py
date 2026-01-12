@@ -6,55 +6,163 @@ import pyqtgraph as pg
 from visualizer.viz.table_renderer import TableView
 
 
+class ElidedLabel(QtWidgets.QLabel):
+    def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._full_text = ""
+        self.setWordWrap(False)
+        self.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
+
+    def set_full_text(self, text: str) -> None:
+        self._full_text = text
+        self.setToolTip(text)
+        self._update_elision()
+
+    def resizeEvent(self, event: QtGui.QResizeEvent) -> None:  # type: ignore[override]
+        super().resizeEvent(event)
+        self._update_elision()
+
+    def _update_elision(self) -> None:
+        available = self._available_width()
+        if available <= 0:
+            super().setText("")
+            return
+        text = self._full_text or ""
+        if not text:
+            super().setText("")
+            return
+        fm = self.fontMetrics()
+        if fm.horizontalAdvance(text) <= available:
+            super().setText(text)
+            return
+        ellipsis = "..."
+        ellipsis_width = fm.horizontalAdvance(ellipsis)
+        if ellipsis_width >= available:
+            super().setText(ellipsis if ellipsis_width <= available else "")
+            return
+        cut = self._binary_search_cut(text, available - ellipsis_width)
+        super().setText(text[:cut] + ellipsis)
+
+    def _available_width(self) -> int:
+        margins = self.contentsMargins()
+        return max(0, self.width() - margins.left() - margins.right())
+
+    def _binary_search_cut(self, text: str, max_width: int) -> int:
+        fm = self.fontMetrics()
+        low, high = 0, len(text)
+        while low < high:
+            mid = (low + high) // 2
+            if fm.horizontalAdvance(text[:mid]) <= max_width:
+                low = mid + 1
+            else:
+                high = mid
+        return max(0, low - 1)
+
+
 class ControlsPanel(QtWidgets.QWidget):
     def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
         super().__init__(parent)
         self.setFixedWidth(320)
+        self.setObjectName("sidebar")
+        self._expanded_width = 320
+        self._collapsed_width = 56
+        self._collapsed = False
+        self._empty_state_active = False
         layout = QtWidgets.QVBoxLayout(self)
 
-        layout.addWidget(QtWidgets.QLabel("Data Folder"))
-        self.data_dir_label = QtWidgets.QLabel("No folder selected")
-        layout.addWidget(self.data_dir_label)
-        self.choose_folder_button = QtWidgets.QPushButton("Choose Data Folder…")
-        layout.addWidget(self.choose_folder_button)
+        self.header_widget = QtWidgets.QWidget()
+        header_layout = QtWidgets.QHBoxLayout(self.header_widget)
+        self.source_label = ElidedLabel()
+        self.source_label.setObjectName("sidebarPathLabel")
+        header_layout.addWidget(self.source_label)
+        self.sidebar_toggle_button = QtWidgets.QToolButton()
+        self.sidebar_toggle_button.setObjectName("sidebarToggleButton")
+        self.sidebar_toggle_button.setAutoRaise(True)
+        self.sidebar_toggle_button.setIcon(self.style().standardIcon(QtWidgets.QStyle.SP_TitleBarMenuButton))
+        self.sidebar_toggle_button.setIconSize(QtCore.QSize(22, 22))
+        self.sidebar_toggle_button.setFixedSize(34, 34)
+        self.sidebar_toggle_button.setText("")
+        self.sidebar_toggle_button.setToolTip("Collapse sidebar")
+        header_layout.addWidget(self.sidebar_toggle_button)
+        layout.addWidget(self.header_widget)
 
-        layout.addWidget(QtWidgets.QLabel("Cards"))
-        self.cards_dir_label = QtWidgets.QLabel("No card folder selected")
-        layout.addWidget(self.cards_dir_label)
-        self.choose_card_file_button = QtWidgets.QPushButton("Open Card File…")
-        layout.addWidget(self.choose_card_file_button)
+        self.content_widget = QtWidgets.QWidget()
+        content_layout = QtWidgets.QVBoxLayout(self.content_widget)
+        content_layout.setContentsMargins(0, 0, 0, 0)
 
+        self.mode_label = QtWidgets.QLabel("Data Files")
+        self.mode_label.setObjectName("sidebarModeLabel")
+        content_layout.addWidget(self.mode_label)
+
+        self.list_stack = QtWidgets.QStackedWidget()
         self.file_list = QtWidgets.QListWidget()
-        layout.addWidget(QtWidgets.QLabel("Available Data Files"))
-        layout.addWidget(self.file_list)
+        self.card_list = QtWidgets.QListWidget()
+        self.list_stack.addWidget(self.file_list)
+        self.list_stack.addWidget(self.card_list)
+        content_layout.addWidget(self.list_stack)
 
         self.add_file_button = QtWidgets.QPushButton("Add File…")
-        layout.addWidget(self.add_file_button)
-
-        self.visualization_combo = QtWidgets.QComboBox()
-        layout.addWidget(QtWidgets.QLabel("Visualization Mode"))
-        layout.addWidget(self.visualization_combo)
+        content_layout.addWidget(self.add_file_button)
 
         self.variable_group = QtWidgets.QGroupBox("Card Variables")
+        self.variable_group.setObjectName("cardVariablesGroup")
         self.variable_form_layout = QtWidgets.QFormLayout()
         self.variable_group.setLayout(self.variable_form_layout)
         self.variable_group.setVisible(False)
-        layout.addWidget(self.variable_group)
-
-        self.card_list = QtWidgets.QListWidget()
-        layout.addWidget(self.card_list)
+        content_layout.addWidget(self.variable_group)
 
         navigation_layout = QtWidgets.QHBoxLayout()
         self.prev_view_button = QtWidgets.QPushButton("Prev View")
         self.next_view_button = QtWidgets.QPushButton("Next View")
         navigation_layout.addWidget(self.prev_view_button)
         navigation_layout.addWidget(self.next_view_button)
-        layout.addLayout(navigation_layout)
+        content_layout.addLayout(navigation_layout)
 
         self.reset_view_button = QtWidgets.QPushButton("Reset View")
-        layout.addWidget(self.reset_view_button)
+        content_layout.addWidget(self.reset_view_button)
+
+        content_layout.addStretch()
+        layout.addWidget(self.content_widget)
+
+        self.empty_state_widget = QtWidgets.QWidget()
+        empty_layout = QtWidgets.QVBoxLayout(self.empty_state_widget)
+        empty_layout.setContentsMargins(0, 0, 0, 0)
+        self.empty_data_button = QtWidgets.QPushButton("Open Data Folder…")
+        self.empty_card_button = QtWidgets.QPushButton("Open Card File…")
+        empty_layout.addWidget(self.empty_data_button)
+        empty_layout.addWidget(self.empty_card_button)
+        empty_layout.addStretch()
+        self.empty_state_widget.setVisible(False)
+        layout.addWidget(self.empty_state_widget)
 
         layout.addStretch()
+
+    def set_collapsed(self, collapsed: bool) -> None:
+        self._collapsed = collapsed
+        self.setFixedWidth(self._collapsed_width if collapsed else self._expanded_width)
+        self._apply_visibility()
+        self.sidebar_toggle_button.setToolTip("Expand sidebar" if collapsed else "Collapse sidebar")
+
+    def is_collapsed(self) -> bool:
+        return self._collapsed
+
+    def set_empty_state(self, active: bool) -> None:
+        self._empty_state_active = active
+        self._apply_visibility()
+        if active:
+            self.source_label.set_full_text("")
+
+    def _apply_visibility(self) -> None:
+        if self._collapsed:
+            self.source_label.setVisible(False)
+            self.mode_label.setVisible(False)
+            self.content_widget.setVisible(False)
+            self.empty_state_widget.setVisible(False)
+            return
+        self.source_label.setVisible(not self._empty_state_active)
+        self.mode_label.setVisible(not self._empty_state_active)
+        self.content_widget.setVisible(not self._empty_state_active)
+        self.empty_state_widget.setVisible(self._empty_state_active)
 
 
 class VisualizationPanel(QtWidgets.QWidget):
@@ -88,9 +196,11 @@ class StatusPanel(QtWidgets.QWidget):
         self.title_label = QtWidgets.QLabel("")
         self.title_label.setAlignment(QtCore.Qt.AlignCenter)
         self.title_label.setStyleSheet("font-weight: bold;")
+        self.title_label.setObjectName("statusTitleLabel")
         layout.addWidget(self.title_label)
 
         self.status_label = QtWidgets.QLabel("Select a dataset to visualize.")
+        self.status_label.setObjectName("statusLabel")
         self.status_label.setWordWrap(True)
         self.status_label.setFrameShape(QtWidgets.QFrame.Panel)
         self.status_label.setFrameShadow(QtWidgets.QFrame.Sunken)
@@ -101,7 +211,7 @@ class StatusPanel(QtWidgets.QWidget):
         layout.addWidget(self.status_label)
 
         self.warning_label = QtWidgets.QLabel("")
-        self.warning_label.setStyleSheet("color: #b58900;")
+        self.warning_label.setObjectName("warningLabel")
         self.warning_label.setWordWrap(True)
         self.warning_label.setVisible(False)
         layout.addWidget(self.warning_label)

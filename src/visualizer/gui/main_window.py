@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from importlib import resources
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -13,6 +14,7 @@ from visualizer.data.repository import DatasetRepository
 from visualizer.interpretation.specs import DefaultInterpreter, PlotSpec, VisualizationType
 from visualizer.state import StateManager
 from visualizer.gui.layout import MainWindowView
+from visualizer.gui.theme import build_stylesheet
 from visualizer.gui.panels import PanelManager
 from visualizer.viz.renderer import PlotRenderer
 from visualizer.viz.table_renderer import TableRenderer, TableView
@@ -48,8 +50,22 @@ class MainWindow(QtWidgets.QMainWindow):
         self._pending_card_file: Optional[Path] = None
         self._last_variable_values: Dict[str, str] = {}
         self._view: MainWindowView | None = None
+        self._visualization_override: VisualizationType | None = None
+        self._list_stack: QtWidgets.QStackedWidget | None = None
+        self._mode_label: QtWidgets.QLabel | None = None
+        self._source_label: QtWidgets.QLabel | None = None
+        self._add_file_button: QtWidgets.QPushButton | None = None
+        self._empty_data_button: QtWidgets.QPushButton | None = None
+        self._empty_card_button: QtWidgets.QPushButton | None = None
+        self._toggle_sidebar_action: QtGui.QAction | None = None
+        self._visualization_action_group: QtGui.QActionGroup | None = None
+        self._sidebar_mode = "data"
+        self._sidebar_icon_expand: QtGui.QIcon | None = None
+        self._sidebar_icon_collapse: QtGui.QIcon | None = None
 
         self._build_ui()
+        self._apply_theme()
+        self._load_sidebar_icons()
         self._restore_state()
         self._load_initial_sources()
 
@@ -64,15 +80,18 @@ class MainWindow(QtWidgets.QMainWindow):
         self._visualization = visualization
         self._status_panel = status_panel
 
-        self._data_dir_label = controls.data_dir_label
-        self._cards_dir_label = controls.cards_dir_label
+        self._source_label = controls.source_label
+        self._mode_label = controls.mode_label
+        self._list_stack = controls.list_stack
         self._file_list = controls.file_list
-        self._visualization_combo = controls.visualization_combo
+        self._add_file_button = controls.add_file_button
         self._variable_group = controls.variable_group
         self._variable_form_layout = controls.variable_form_layout
         self._card_list = controls.card_list
         self._prev_view_button = controls.prev_view_button
         self._next_view_button = controls.next_view_button
+        self._empty_data_button = controls.empty_data_button
+        self._empty_card_button = controls.empty_card_button
 
         self._plot_stack = visualization.plot_stack
         self._single_plot_widget = visualization.single_plot_widget
@@ -84,24 +103,98 @@ class MainWindow(QtWidgets.QMainWindow):
         self._status_label = status_panel.status_label
         self._warning_label = status_panel.warning_label
 
-        controls.choose_folder_button.clicked.connect(self._handle_choose_folder)
-        controls.choose_card_file_button.clicked.connect(self._handle_choose_card_file)
         self._file_list.itemSelectionChanged.connect(self._handle_file_selection)
         controls.add_file_button.clicked.connect(self._handle_add_file)
-
-        self._populate_visualization_combo(self._visualization_combo)
-        self._visualization_combo.currentIndexChanged.connect(self._handle_visualization_change)
 
         self._card_list.itemSelectionChanged.connect(self._handle_card_selection)
 
         self._prev_view_button.clicked.connect(self._handle_prev_view)
         self._next_view_button.clicked.connect(self._handle_next_view)
         controls.reset_view_button.clicked.connect(self._handle_reset_view)
+        controls.sidebar_toggle_button.clicked.connect(self._handle_sidebar_toggle_button)
+        self._empty_data_button.clicked.connect(self._handle_choose_folder)
+        self._empty_card_button.clicked.connect(self._handle_choose_card_file)
 
         self._single_table_widget.pivot_handler = self._handle_pivot_step
         self._single_table_widget.navigation_handler = self._handle_card_list_step
 
+        self._build_menu()
+        self._update_sidebar_mode()
         self._update_navigation_buttons()
+
+    def _apply_theme(self) -> None:
+        self.setStyleSheet(build_stylesheet())
+
+    def _load_sidebar_icons(self) -> None:
+        self._sidebar_icon_collapse = self._load_icon_from_package("sidebar-collapse.png")
+        self._sidebar_icon_expand = self._load_icon_from_package("sidebar-expand.png")
+        self._update_sidebar_toggle_icon()
+
+    def _load_icon_from_package(self, name: str) -> QtGui.QIcon | None:
+        try:
+            icon_path = resources.files("visualizer.assets.icons").joinpath(name)
+            data = icon_path.read_bytes()
+        except Exception:
+            return None
+        pixmap = QtGui.QPixmap()
+        if not pixmap.loadFromData(data):
+            return None
+        return QtGui.QIcon(pixmap)
+
+    def _update_sidebar_toggle_icon(self) -> None:
+        if not self._controls:
+            return
+        collapsed = self._controls.is_collapsed()
+        icon = self._sidebar_icon_expand if collapsed else self._sidebar_icon_collapse
+        if icon:
+            self._controls.sidebar_toggle_button.setIcon(icon)
+
+    def _build_menu(self) -> None:
+        menu_bar = self.menuBar()
+        file_menu = menu_bar.addMenu("File")
+        open_data_action = QtGui.QAction("Open Data Folder…", self)
+        open_data_action.triggered.connect(self._handle_choose_folder)
+        file_menu.addAction(open_data_action)
+
+        add_file_action = QtGui.QAction("Add Data File…", self)
+        add_file_action.triggered.connect(self._handle_add_file)
+        file_menu.addAction(add_file_action)
+
+        open_card_action = QtGui.QAction("Open Card File…", self)
+        open_card_action.triggered.connect(self._handle_choose_card_file)
+        file_menu.addAction(open_card_action)
+
+        file_menu.addSeparator()
+        exit_action = QtGui.QAction("Quit", self)
+        exit_action.triggered.connect(self.close)
+        file_menu.addAction(exit_action)
+
+        view_menu = menu_bar.addMenu("View")
+        self._toggle_sidebar_action = QtGui.QAction("Collapse Sidebar", self)
+        self._toggle_sidebar_action.setCheckable(True)
+        self._toggle_sidebar_action.setChecked(True)
+        self._toggle_sidebar_action.toggled.connect(self._handle_toggle_sidebar)
+        view_menu.addAction(self._toggle_sidebar_action)
+
+        viz_menu = view_menu.addMenu("Visualization Mode")
+        self._visualization_action_group = QtGui.QActionGroup(self)
+        self._visualization_action_group.setExclusive(True)
+
+        auto_action = QtGui.QAction("Auto", self)
+        auto_action.setCheckable(True)
+        auto_action.setChecked(True)
+        auto_action.setData(None)
+        viz_menu.addAction(auto_action)
+        self._visualization_action_group.addAction(auto_action)
+
+        for handler in self._viz_registry.handlers():
+            action = QtGui.QAction(handler.label, self)
+            action.setCheckable(True)
+            action.setData(handler.visualization)
+            viz_menu.addAction(action)
+            self._visualization_action_group.addAction(action)
+
+        self._visualization_action_group.triggered.connect(self._handle_visualization_action)
 
     def _load_initial_sources(self) -> None:
         self._load_cards()
@@ -122,6 +215,86 @@ class MainWindow(QtWidgets.QMainWindow):
             )
         else:
             self._set_warning(None)
+        self._update_sidebar_mode()
+
+    def _handle_toggle_sidebar(self, checked: bool) -> None:
+        if not self._view:
+            return
+        self._view.controls.set_collapsed(not checked)
+        self._update_sidebar_toggle_icon()
+        if self._toggle_sidebar_action:
+            self._toggle_sidebar_action.setText("Collapse Sidebar" if checked else "Expand Sidebar")
+
+    def _handle_sidebar_toggle_button(self) -> None:
+        if self._toggle_sidebar_action:
+            self._toggle_sidebar_action.setChecked(not self._toggle_sidebar_action.isChecked())
+
+    def _handle_visualization_action(self, action: QtGui.QAction) -> None:
+        data = action.data()
+        self._visualization_override = data if isinstance(data, VisualizationType) else None
+        self._handle_visualization_change()
+
+    def _update_sidebar_mode(self) -> None:
+        if not self._list_stack or not self._mode_label:
+            return
+        has_cards = bool(self._cards_dir or self._card_list.count())
+        has_data = bool(self._data_dir or self._file_list.count() or self._added_files)
+        if self._controls:
+            self._controls.set_empty_state(not has_cards and not has_data)
+        mode = self._sidebar_mode
+        if mode == "card" and not has_cards:
+            mode = "data"
+        if mode == "data" and not has_data and has_cards:
+            mode = "card"
+        self._set_sidebar_mode(mode)
+
+    def _set_sidebar_mode(self, mode: str) -> None:
+        if not self._list_stack or not self._mode_label:
+            return
+        self._sidebar_mode = mode
+        if mode == "card":
+            self._list_stack.setCurrentWidget(self._card_list)
+            self._mode_label.setText("Cards")
+            if self._add_file_button:
+                self._add_file_button.setVisible(False)
+        else:
+            self._list_stack.setCurrentWidget(self._file_list)
+            self._mode_label.setText("Data Files")
+            if self._add_file_button:
+                self._add_file_button.setVisible(True)
+        self._update_source_label(mode)
+
+    def _update_source_label(self, mode: str) -> None:
+        if not self._source_label:
+            return
+        if mode == "card":
+            if self._cards_dir:
+                text = self._format_path(self._cards_dir)
+            elif self._active_card_path:
+                text = self._format_path(self._active_card_path)
+            else:
+                text = ""
+        else:
+            if self._data_dir:
+                text = self._format_path(self._data_dir)
+            else:
+                text = ""
+        if hasattr(self._source_label, "set_full_text"):
+            self._source_label.set_full_text(text)  # type: ignore[call-arg]
+        else:
+            self._source_label.setText(text)
+
+    def _format_path(self, path: Path) -> str:
+        raw = str(path)
+        try:
+            home = str(Path.home())
+            if raw == home:
+                return "~"
+            if raw.startswith(home + "/"):
+                return "~/" + raw[len(home) + 1 :]
+        except Exception:
+            pass
+        return raw
 
     def _add_file_to_list(self, path: Path) -> None:
         for index in range(self._file_list.count()):
@@ -136,11 +309,9 @@ class MainWindow(QtWidgets.QMainWindow):
     def _refresh_file_list(self) -> None:
         self._file_list.clear()
         if not self._data_dir:
-            if self._data_dir_label:
-                self._data_dir_label.setText("No folder selected")
+            self._update_source_label("data")
             return
-        if self._data_dir_label:
-            self._data_dir_label.setText(str(self._data_dir))
+        self._update_source_label("data")
         for file_path in self._repository.list_datasets(self._data_dir):
             self._add_file_to_list(file_path)
         for extra in sorted(self._added_files):
@@ -160,6 +331,8 @@ class MainWindow(QtWidgets.QMainWindow):
                 path = Path(selected_files[0])
                 self._add_file_to_list(path)
                 self._status_label.setText(f"Added {path.name}")
+                self._sidebar_mode = "data"
+                self._update_sidebar_mode()
 
     def _handle_choose_folder(self) -> None:
         dialog = QtWidgets.QFileDialog(self)
@@ -171,6 +344,8 @@ class MainWindow(QtWidgets.QMainWindow):
                 self._data_dir = Path(folders[0])
                 self._refresh_file_list()
                 self._status_label.setText(f"Loaded folder {self._data_dir}")
+                self._sidebar_mode = "data"
+                self._update_sidebar_mode()
 
     def _handle_choose_card_file(self) -> None:
         dialog = QtWidgets.QFileDialog(self)
@@ -185,17 +360,20 @@ class MainWindow(QtWidgets.QMainWindow):
                 card_path = Path(files[0])
                 self._set_card_loader(card_path.parent, select_card=card_path)
                 self._status_label.setText(f"Loaded card {card_path.name}")
+                self._update_sidebar_mode()
 
     def _handle_file_selection(self) -> None:
         selected_items = self._file_list.selectedItems()
         if not selected_items:
             return
+        self._sidebar_mode = "data"
         self._clear_card_selection()
         path = selected_items[0].data(QtCore.Qt.UserRole)
         if path:
             self._load_and_render(Path(path))
+        self._update_sidebar_mode()
 
-    def _handle_visualization_change(self, _: int) -> None:
+    def _handle_visualization_change(self) -> None:
         if self._card_session:
             self._render_current_card_selection()
             return
@@ -246,6 +424,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _activate_card(self, card_path: Path) -> None:
         try:
+            self._sidebar_mode = "card"
             session = self._controller.activate_card(
                 card_path,
                 preferred_selection=self._last_variable_values if self._last_variable_values else None,
@@ -265,6 +444,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self._populate_variable_controls()
             self._render_current_card_selection()
             self._update_last_variable_values(session)
+            self._update_sidebar_mode()
         except Exception as exc:  # pragma: no cover - GUI feedback
             self._card_session = None
             self._status_label.setText(f"Card error: {exc}")
@@ -272,6 +452,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self._variable_group.setVisible(False)
             self._panel_manager.clear(self._multi_plot_layout)
             self._active_card_path = None
+            self._update_sidebar_mode()
 
     def _handle_next_view(self) -> None:
         self._handle_pivot_step(1)
@@ -334,8 +515,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self._controller.set_cards_dir(path)
         self._card_loader = self._controller.card_loader
         self._cards_dir = path
-        if self._cards_dir_label:
-            self._cards_dir_label.setText(str(path))
+        self._sidebar_mode = "card"
+        self._update_source_label("card")
         self._clear_card_selection()
         self._load_cards()
         if select_card:
@@ -348,6 +529,7 @@ class MainWindow(QtWidgets.QMainWindow):
                     break
         else:
             self._pending_card_file = None
+        self._update_sidebar_mode()
 
     def _restore_state(self) -> None:
         data_dir = self._saved_state.get("data_dir")
@@ -405,9 +587,8 @@ class MainWindow(QtWidgets.QMainWindow):
     ) -> VisualizationType | None:
         if panel_override:
             return panel_override
-        choice = self._visualization_combo.currentData()
-        if isinstance(choice, VisualizationType):
-            return choice
+        if self._visualization_override:
+            return self._visualization_override
         if card_style:
             try:
                 return card_style.visualization()

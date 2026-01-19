@@ -25,7 +25,12 @@ class DatasetRepository:
 
     def __init__(self, schema_path: Path | None = None) -> None:
         self._cache: Dict[Path, CachedEntry] = {}
-        self._schema_path = schema_path or Path(__file__).resolve().parents[2] / "schema" / "data_payload.schema.json"
+        if schema_path:
+            self._schema_path = schema_path
+        else:
+            repo_schema = Path(__file__).resolve().parents[3] / "schema" / "data_payload.schema.json"
+            fallback_schema = Path(__file__).resolve().parents[2] / "schema" / "data_payload.schema.json"
+            self._schema_path = repo_schema if repo_schema.exists() else fallback_schema
         self._json_validator = self._load_json_validator()
         self._schema_validation_enabled = self._json_validator is not None
 

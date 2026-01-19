@@ -1,3 +1,4 @@
+import json
 import os
 from contextlib import contextmanager
 from typing import Iterator
@@ -42,6 +43,45 @@ def _create_window() -> MainWindow:
     # Ensure state restore does not override paths
     window._set_card_loader(cards_dir)  # type: ignore[attr-defined]
     return window
+
+
+def _write_series(path: Path, x_values: list[float], y_values: list[float]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {"dataset": path.stem, "data": {"x_axis": x_values, "y_axis": y_values}}
+    path.write_text(json.dumps(payload))
+
+
+def _create_missing_panel_window(tmp_path: Path) -> tuple[MainWindow, Path]:
+    data_dir = tmp_path / "data"
+    cards_dir = tmp_path / "cards"
+    cards_dir.mkdir(parents=True, exist_ok=True)
+    _write_series(data_dir / "a" / "primary.json", [0.0, 1.0, 2.0], [1.0, 1.5, 2.0])
+    _write_series(data_dir / "a" / "secondary.json", [0.0, 1.0, 2.0], [0.2, 0.4, 0.6])
+    _write_series(data_dir / "b" / "secondary.json", [0.0, 1.0, 2.0], [0.1, 0.3, 0.5])
+    _write_series(data_dir / "c" / "primary.json", [0.0, 1.0, 2.0], [1.1, 1.4, 1.9])
+
+    card_path = cards_dir / "missing_panels.toml"
+    card_path.write_text(
+        "\n".join(
+            [
+                "[global]",
+                'pivot_chart = "sample"',
+                "",
+                "[subcards.primary]",
+                'filepath = "<CARD_DIR>/../data/{{sample}}/primary.json"',
+                'chart_style = "line"',
+                "",
+                "[subcards.secondary]",
+                'filepath = "<CARD_DIR>/../data/{{sample}}/secondary.json"',
+                'chart_style = "colormap"',
+                "",
+            ]
+        )
+    )
+
+    window = MainWindow(data_dir=data_dir, cards_dir=cards_dir)
+    window._set_card_loader(cards_dir)  # type: ignore[attr-defined]
+    return window, card_path
 
 
 def test_colormap_card_renders_items(app: QtWidgets.QApplication) -> None:  # noqa: ARG001
@@ -122,3 +162,27 @@ def test_synchronized_axes_hide_redundant_bottom_axes(app: QtWidgets.QApplicatio
             assert getattr(plot, "_bottom_axis_hidden", False) is True
         else:
             assert getattr(plot, "_bottom_axis_hidden", False) is False
+
+
+def test_missing_panels_clear_previous_items(
+    app: QtWidgets.QApplication, tmp_path: Path  # noqa: ARG001
+) -> None:
+    window, card_path = _create_missing_panel_window(tmp_path)
+    window._activate_card(card_path)
+
+    primary = window._panel_manager.plot_by_name("primary")  # type: ignore[attr-defined]
+    secondary = window._panel_manager.plot_by_name("secondary")  # type: ignore[attr-defined]
+    assert primary is not None
+    assert secondary is not None
+    assert any(isinstance(item, pg.PlotDataItem) for item in primary.getPlotItem().items)
+    assert any(isinstance(item, pg.ImageItem) for item in secondary.getPlotItem().items)
+
+    window._controller.update_selection("sample", "b")  # type: ignore[attr-defined]
+    window._render_current_card_selection()
+    assert not any(isinstance(item, pg.PlotDataItem) for item in primary.getPlotItem().items)
+    assert any(isinstance(item, pg.ImageItem) for item in secondary.getPlotItem().items)
+
+    window._controller.update_selection("sample", "c")  # type: ignore[attr-defined]
+    window._render_current_card_selection()
+    assert any(isinstance(item, pg.PlotDataItem) for item in primary.getPlotItem().items)
+    assert not any(isinstance(item, pg.ImageItem) for item in secondary.getPlotItem().items)

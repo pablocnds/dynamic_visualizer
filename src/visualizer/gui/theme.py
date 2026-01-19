@@ -83,6 +83,71 @@ QMenu::item:selected {{
   color: {colors["text"]};
 }}
 
+#loadedFilesToggle {{
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 2px;
+  color: {colors["text"]};
+}}
+
+#loadedFilesToggle:hover {{
+  background: {colors["accent_soft"]};
+}}
+
+#sidebar QListWidget QScrollBar:vertical {{
+  background: {colors["surface_alt"]};
+  width: 10px;
+  margin: 0;
+}}
+
+#sidebar QListWidget QScrollBar::handle:vertical {{
+  background: {colors["border"]};
+  border-radius: 5px;
+  min-height: 20px;
+}}
+
+#sidebar QListWidget QScrollBar::handle:vertical:hover {{
+  background: {colors["muted_text"]};
+}}
+
+#sidebar QListWidget QScrollBar::add-line:vertical,
+#sidebar QListWidget QScrollBar::sub-line:vertical {{
+  background: none;
+  height: 0;
+}}
+
+#sidebar QListWidget QScrollBar::add-page:vertical,
+#sidebar QListWidget QScrollBar::sub-page:vertical {{
+  background: {colors["surface_alt"]};
+}}
+
+#sidebar QListWidget QScrollBar:horizontal {{
+  background: {colors["surface_alt"]};
+  height: 10px;
+  margin: 0;
+}}
+
+#sidebar QListWidget QScrollBar::handle:horizontal {{
+  background: {colors["border"]};
+  border-radius: 5px;
+  min-width: 20px;
+}}
+
+#sidebar QListWidget QScrollBar::handle:horizontal:hover {{
+  background: {colors["muted_text"]};
+}}
+
+#sidebar QListWidget QScrollBar::add-line:horizontal,
+#sidebar QListWidget QScrollBar::sub-line:horizontal {{
+  background: none;
+  width: 0;
+}}
+
+#sidebar QListWidget QScrollBar::add-page:horizontal,
+#sidebar QListWidget QScrollBar::sub-page:horizontal {{
+  background: {colors["surface_alt"]};
+}}
+
 QListWidget {{
   background: {colors["surface"]};
   border: 1px solid {colors["border"]};
@@ -198,6 +263,10 @@ QTableView {{
 }}
 
 #cardVariablesGroup QLabel {{
+  color: {colors["text"]};
+}}
+
+#loadedFilesLabel {{
   color: {colors["text"]};
 }}
 """.strip()

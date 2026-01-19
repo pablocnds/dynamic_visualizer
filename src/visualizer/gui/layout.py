@@ -111,6 +111,30 @@ class ControlsPanel(QtWidgets.QWidget):
         self.variable_group.setVisible(False)
         content_layout.addWidget(self.variable_group)
 
+        self.loaded_files_group = QtWidgets.QGroupBox("")
+        self.loaded_files_group.setObjectName("loadedFilesGroup")
+        loaded_files_layout = QtWidgets.QVBoxLayout(self.loaded_files_group)
+        loaded_header = QtWidgets.QHBoxLayout()
+        self.loaded_files_label = QtWidgets.QLabel("loaded files")
+        self.loaded_files_label.setObjectName("loadedFilesLabel")
+        loaded_header.addWidget(self.loaded_files_label)
+        loaded_header.addStretch()
+        self.loaded_files_toggle = QtWidgets.QToolButton()
+        self.loaded_files_toggle.setObjectName("loadedFilesToggle")
+        self.loaded_files_toggle.setAutoRaise(True)
+        self.loaded_files_toggle.setArrowType(QtCore.Qt.RightArrow)
+        self.loaded_files_toggle.setFixedSize(20, 20)
+        self.loaded_files_toggle.setToolTip("Expand loaded files")
+        loaded_header.addWidget(self.loaded_files_toggle)
+        loaded_files_layout.addLayout(loaded_header)
+        self.loaded_files_list = QtWidgets.QListWidget()
+        self.loaded_files_list.setSelectionMode(QtWidgets.QAbstractItemView.NoSelection)
+        self.loaded_files_list.setVisible(False)
+        loaded_files_layout.addWidget(self.loaded_files_list)
+        self._loaded_files_expanded = False
+        self.loaded_files_toggle.clicked.connect(self._toggle_loaded_files)
+        content_layout.addWidget(self.loaded_files_group)
+
         navigation_layout = QtWidgets.QHBoxLayout()
         self.prev_view_button = QtWidgets.QPushButton("Prev View")
         self.next_view_button = QtWidgets.QPushButton("Next View")
@@ -151,6 +175,19 @@ class ControlsPanel(QtWidgets.QWidget):
         self._apply_visibility()
         if active:
             self.source_label.set_full_text("")
+
+    def _toggle_loaded_files(self) -> None:
+        self._set_loaded_files_expanded(not self._loaded_files_expanded)
+
+    def _set_loaded_files_expanded(self, expanded: bool) -> None:
+        self._loaded_files_expanded = expanded
+        self.loaded_files_list.setVisible(expanded)
+        self.loaded_files_toggle.setArrowType(
+            QtCore.Qt.DownArrow if expanded else QtCore.Qt.RightArrow
+        )
+        self.loaded_files_toggle.setToolTip(
+            "Collapse loaded files" if expanded else "Expand loaded files"
+        )
 
     def _apply_visibility(self) -> None:
         if self._collapsed:

@@ -57,17 +57,23 @@ class MainWindow(QtWidgets.QMainWindow):
         self._add_file_button: QtWidgets.QPushButton | None = None
         self._empty_data_button: QtWidgets.QPushButton | None = None
         self._empty_card_button: QtWidgets.QPushButton | None = None
+        self._loaded_files_group: QtWidgets.QGroupBox | None = None
+        self._loaded_files_list: QtWidgets.QListWidget | None = None
         self._toggle_sidebar_action: QtGui.QAction | None = None
         self._visualization_action_group: QtGui.QActionGroup | None = None
         self._sidebar_mode = "data"
         self._sidebar_icon_expand: QtGui.QIcon | None = None
         self._sidebar_icon_collapse: QtGui.QIcon | None = None
+        self._up_shortcut: QtWidgets.QShortcut | None = None
+        self._down_shortcut: QtWidgets.QShortcut | None = None
+        self._pending_data_file: Path | None = None
 
         self._build_ui()
         self._apply_theme()
         self._load_sidebar_icons()
         self._restore_state()
         self._load_initial_sources()
+        self._sync_initial_view_state()
 
     def _build_ui(self) -> None:
         self._view = MainWindowView(self)
@@ -92,6 +98,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self._next_view_button = controls.next_view_button
         self._empty_data_button = controls.empty_data_button
         self._empty_card_button = controls.empty_card_button
+        self._loaded_files_group = controls.loaded_files_group
+        self._loaded_files_list = controls.loaded_files_list
 
         self._plot_stack = visualization.plot_stack
         self._single_plot_widget = visualization.single_plot_widget
@@ -118,12 +126,21 @@ class MainWindow(QtWidgets.QMainWindow):
         self._single_table_widget.pivot_handler = self._handle_pivot_step
         self._single_table_widget.navigation_handler = self._handle_card_list_step
 
+        self._install_navigation_shortcuts()
         self._build_menu()
         self._update_sidebar_mode()
         self._update_navigation_buttons()
 
     def _apply_theme(self) -> None:
         self.setStyleSheet(build_stylesheet())
+
+    def _install_navigation_shortcuts(self) -> None:
+        self._up_shortcut = QtGui.QShortcut(QtGui.QKeySequence(QtCore.Qt.Key_Up), self)
+        self._up_shortcut.setContext(QtCore.Qt.ApplicationShortcut)
+        self._up_shortcut.activated.connect(lambda: self._handle_list_navigation_shortcut(-1))
+        self._down_shortcut = QtGui.QShortcut(QtGui.QKeySequence(QtCore.Qt.Key_Down), self)
+        self._down_shortcut.setContext(QtCore.Qt.ApplicationShortcut)
+        self._down_shortcut.activated.connect(lambda: self._handle_list_navigation_shortcut(1))
 
     def _load_sidebar_icons(self) -> None:
         self._sidebar_icon_collapse = self._load_icon_from_package("sidebar-collapse.png")
@@ -207,8 +224,16 @@ class MainWindow(QtWidgets.QMainWindow):
                     self._card_list.setCurrentItem(item)
                     self._handle_card_selection()
                     break
+        if not self._card_session and self._pending_data_file:
+            if self._pending_data_file.exists():
+                self._add_file_to_list(self._pending_data_file)
+                row = self._find_file_row(self._pending_data_file)
+                if row >= 0:
+                    self._file_list.setCurrentRow(row)
+                    self._handle_file_selection()
+            self._pending_data_file = None
         if not self._data_dir and not self._pending_card_file:
-            self._status_label.setText("Choose a data folder or add files to begin.")
+            self._set_status_message(None)
         if not self._repository.schema_validation_enabled:
             self._set_warning(
                 "JSON schema validation is disabled (jsonschema not installed); JSON payloads are only lightly validated."
@@ -216,6 +241,23 @@ class MainWindow(QtWidgets.QMainWindow):
         else:
             self._set_warning(None)
         self._update_sidebar_mode()
+        self._update_loaded_files()
+
+    def _sync_initial_view_state(self) -> None:
+        if self._pending_card_file:
+            return
+        if self._card_session:
+            self._render_current_card_selection()
+            return
+        if self._current_path and self._current_dataset:
+            self._load_and_render(self._current_path)
+
+    def _set_status_message(self, message: str | None) -> None:
+        if not self._status_label:
+            return
+        text = message if message else "All good."
+        self._status_label.setText(text)
+        self._status_label.setVisible(True)
 
     def _handle_toggle_sidebar(self, checked: bool) -> None:
         if not self._view:
@@ -233,6 +275,12 @@ class MainWindow(QtWidgets.QMainWindow):
         data = action.data()
         self._visualization_override = data if isinstance(data, VisualizationType) else None
         self._handle_visualization_change()
+
+    def _handle_list_navigation_shortcut(self, step: int) -> None:
+        if self._sidebar_mode == "card":
+            self._handle_card_list_step(step)
+        else:
+            self._handle_file_list_step(step)
 
     def _update_sidebar_mode(self) -> None:
         if not self._list_stack or not self._mode_label:
@@ -284,6 +332,18 @@ class MainWindow(QtWidgets.QMainWindow):
         else:
             self._source_label.setText(text)
 
+    def _update_loaded_files(self, paths: List[Path] | None = None) -> None:
+        if not self._loaded_files_list:
+            return
+        self._loaded_files_list.clear()
+        if paths is None:
+            paths = []
+        if not paths:
+            self._loaded_files_list.addItem("No data loaded")
+            return
+        for path in paths:
+            self._loaded_files_list.addItem(self._format_path(path))
+
     def _format_path(self, path: Path) -> str:
         raw = str(path)
         try:
@@ -305,6 +365,13 @@ class MainWindow(QtWidgets.QMainWindow):
         item.setData(QtCore.Qt.UserRole, path)
         self._file_list.addItem(item)
         self._added_files.add(path)
+
+    def _find_file_row(self, path: Path) -> int:
+        for index in range(self._file_list.count()):
+            item = self._file_list.item(index)
+            if item.data(QtCore.Qt.UserRole) == path:
+                return index
+        return -1
 
     def _refresh_file_list(self) -> None:
         self._file_list.clear()
@@ -330,7 +397,6 @@ class MainWindow(QtWidgets.QMainWindow):
             if selected_files:
                 path = Path(selected_files[0])
                 self._add_file_to_list(path)
-                self._status_label.setText(f"Added {path.name}")
                 self._sidebar_mode = "data"
                 self._update_sidebar_mode()
 
@@ -343,7 +409,6 @@ class MainWindow(QtWidgets.QMainWindow):
             if folders:
                 self._data_dir = Path(folders[0])
                 self._refresh_file_list()
-                self._status_label.setText(f"Loaded folder {self._data_dir}")
                 self._sidebar_mode = "data"
                 self._update_sidebar_mode()
 
@@ -359,7 +424,6 @@ class MainWindow(QtWidgets.QMainWindow):
             if files:
                 card_path = Path(files[0])
                 self._set_card_loader(card_path.parent, select_card=card_path)
-                self._status_label.setText(f"Loaded card {card_path.name}")
                 self._update_sidebar_mode()
 
     def _handle_file_selection(self) -> None:
@@ -385,7 +449,7 @@ class MainWindow(QtWidgets.QMainWindow):
             return
         self._plot_stack.setCurrentWidget(self._single_plot_widget)
         self._draw_plot(self._single_plot_widget, self._current_dataset, self._current_path, card_style=None)
-        self._status_label.setText(f"Loaded {self._current_path.name}")
+        self._set_status_message(None)
 
     def _populate_visualization_combo(self, combo: QtWidgets.QComboBox) -> None:
         combo.blockSignals(True)
@@ -432,10 +496,11 @@ class MainWindow(QtWidgets.QMainWindow):
             self._card_loader = self._controller.card_loader
             if not session.has_paths():
                 self._card_session = None
-                self._status_label.setText("Card has no matching datasets.")
+                self._set_status_message("Card has no matching datasets.")
                 self._update_navigation_buttons()
                 self._variable_group.setVisible(False)
                 self._panel_manager.clear(self._multi_plot_layout)
+                self._update_loaded_files([])
                 return
             self._card_session = session
             self._active_card_path = card_path
@@ -447,11 +512,12 @@ class MainWindow(QtWidgets.QMainWindow):
             self._update_sidebar_mode()
         except Exception as exc:  # pragma: no cover - GUI feedback
             self._card_session = None
-            self._status_label.setText(f"Card error: {exc}")
+            self._set_status_message(f"Card error: {exc}")
             self._update_navigation_buttons()
             self._variable_group.setVisible(False)
             self._panel_manager.clear(self._multi_plot_layout)
             self._active_card_path = None
+            self._update_loaded_files([])
             self._update_sidebar_mode()
 
     def _handle_next_view(self) -> None:
@@ -472,7 +538,7 @@ class MainWindow(QtWidgets.QMainWindow):
             if self._card_session:
                 self._update_last_variable_values(self._card_session)
         except Exception as exc:  # pragma: no cover - GUI feedback
-            self._status_label.setText(f"Card error: {exc}")
+            self._set_status_message(f"Card error: {exc}")
         return True
 
     def keyPressEvent(self, event: QtGui.QKeyEvent) -> None:  # type: ignore[override]
@@ -484,6 +550,15 @@ class MainWindow(QtWidgets.QMainWindow):
             self._handle_prev_view()
             event.accept()
             return
+        if event.key() in (QtCore.Qt.Key_Up, QtCore.Qt.Key_Down):
+            step = -1 if event.key() == QtCore.Qt.Key_Up else 1
+            if self._sidebar_mode == "card":
+                handled = self._handle_card_list_step(step)
+            else:
+                handled = self._handle_file_list_step(step)
+            if handled:
+                event.accept()
+                return
         super().keyPressEvent(event)
 
     def _clear_card_selection(self) -> None:
@@ -500,6 +575,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._plot_stack.setCurrentWidget(self._single_plot_widget)
         self._active_card_path = None
         self._pending_card_file = None
+        self._update_loaded_files([])
 
     def _update_navigation_buttons(self) -> None:
         self._card_session = self._controller.card_session
@@ -534,6 +610,7 @@ class MainWindow(QtWidgets.QMainWindow):
     def _restore_state(self) -> None:
         data_dir = self._saved_state.get("data_dir")
         card_file = self._saved_state.get("card_file")
+        data_file = self._saved_state.get("data_file")
         added_files = self._saved_state.get("added_files", [])
         if data_dir:
             path = Path(data_dir)
@@ -548,11 +625,17 @@ class MainWindow(QtWidgets.QMainWindow):
             if path.exists():
                 self._pending_card_file = path
                 self._set_card_loader(path.parent, select_card=path)
+        if data_file:
+            path = Path(data_file)
+            if path.exists():
+                self._pending_data_file = path
 
     def _save_state(self) -> None:
         state = {}
         if self._data_dir and self._data_dir.exists():
             state["data_dir"] = str(self._data_dir.resolve())
+        if self._current_path and self._current_path.exists():
+            state["data_file"] = str(self._current_path.resolve())
         if self._active_card_path and self._active_card_path.exists():
             state["card_file"] = str(self._active_card_path.resolve())
         elif self._pending_card_file and self._pending_card_file.exists():
@@ -576,9 +659,11 @@ class MainWindow(QtWidgets.QMainWindow):
             else:
                 self._plot_stack.setCurrentWidget(self._single_plot_widget)
                 self._draw_plot(self._single_plot_widget, dataset, path, card_style)
-            self._status_label.setText(f"Loaded {path.name}")
+            self._set_status_message(None)
+            self._update_loaded_files([path])
         except Exception as exc:  # pragma: no cover - GUI feedback
-            self._status_label.setText(f"Error: {exc}")
+            self._set_status_message(f"Error: {exc}")
+            self._update_loaded_files([])
 
     def _resolve_visualization_override(
         self,
@@ -697,7 +782,10 @@ class MainWindow(QtWidgets.QMainWindow):
         if table:
             self._render_table_panel(table, data or [])
             return
-        if not plot or not data:
+        if not plot:
+            return
+        if not data:
+            self._renderer.reset_widget(plot)
             return
         self._renderer.reset_widget(plot)
         override = self._panel_overrides.get(subcard_name)
@@ -726,7 +814,7 @@ class MainWindow(QtWidgets.QMainWindow):
             except ValueError as exc:
                 # Incompatible overlay (e.g., mixing 1D and 2D plots); render first spec and surface message.
                 self._renderer.render(plot, specs[0])
-                self._status_label.setText(str(exc))
+                self._set_status_message(str(exc))
 
     def _render_table_panel(
         self,
@@ -766,6 +854,20 @@ class MainWindow(QtWidgets.QMainWindow):
         if next_row == current:
             return True
         self._card_list.setCurrentRow(next_row)
+        return True
+
+    def _handle_file_list_step(self, step: int) -> bool:
+        count = self._file_list.count()
+        if count == 0:
+            return False
+        current = self._file_list.currentRow()
+        if current < 0:
+            next_row = 0 if step >= 0 else count - 1
+        else:
+            next_row = max(0, min(count - 1, current + step))
+        if next_row == current:
+            return True
+        self._file_list.setCurrentRow(next_row)
         return True
 
     def _populate_variable_controls(self) -> None:
@@ -852,7 +954,7 @@ class MainWindow(QtWidgets.QMainWindow):
             if self._card_session:
                 self._update_last_variable_values(self._card_session)
         except Exception as exc:  # pragma: no cover - GUI feedback
-            self._status_label.setText(f"Card selection error: {exc}")
+            self._set_status_message(f"Card selection error: {exc}")
 
     def _render_current_card_selection(self) -> None:
         session = self._controller.card_session
@@ -861,13 +963,14 @@ class MainWindow(QtWidgets.QMainWindow):
         try:
             plans, missing = self._controller.build_panel_plans()
         except Exception as exc:  # pragma: no cover - GUI feedback
-            self._status_label.setText(f"Card error: {exc}")
+            self._set_status_message(f"Card error: {exc}")
             self._show_error_dialog("Card error", str(exc))
             return
 
         self._card_session = session
         if not plans:
-            self._status_label.setText("Card selection has no matching datasets.")
+            self._set_status_message("Card selection has no matching datasets.")
+            self._update_loaded_files([])
             return
 
         active_names = {plan.subcard.name for plan in plans}
@@ -901,21 +1004,25 @@ class MainWindow(QtWidgets.QMainWindow):
             warning = self._update_existing_panels(panels)
         if session.definition.synchronize_axis:
             self._panel_manager.synchronize_x_axes()
-        selection_text = ", ".join(
-            f"{var}={value}" for var, value in sorted(session.selection.items())
-        )
-        card_label = self._active_card_path.name if self._active_card_path else "card"
-        message = f"Card {card_label}: {selection_text}"
-        if missing:
-            message += f" (missing: {', '.join(missing)})"
         warning_bits = []
         if warning:
             warning_bits.append(warning)
         if panel_warnings:
             warning_bits.extend(panel_warnings)
+        if missing:
+            warning_bits.append(f"missing: {', '.join(missing)}")
         if warning_bits:
-            message += f" [{'; '.join(warning_bits)}]"
-        self._status_label.setText(message)
+            self._set_status_message("; ".join(warning_bits))
+        else:
+            self._set_status_message(None)
+        unique_paths = []
+        seen = set()
+        for _subcard, _entries, paths, _kind in panels:
+            for path in paths:
+                if path not in seen:
+                    seen.add(path)
+                    unique_paths.append(path)
+        self._update_loaded_files(unique_paths)
 
     def _infer_panel_kind(
         self,

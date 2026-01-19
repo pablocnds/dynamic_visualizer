@@ -23,7 +23,7 @@ class TableModel(QtCore.QAbstractTableModel):
     def columnCount(self, parent: QtCore.QModelIndex = QtCore.QModelIndex()) -> int:  # noqa: B008
         return len(self._column_names)
 
-    def data(self, index: QtCore.QModelIndex, role: int = QtCore.Qt.DisplayRole) -> str | None:
+    def data(self, index: QtCore.QModelIndex, role: int = QtCore.Qt.DisplayRole) -> object | None:
         if not index.isValid():
             return None
         if role == QtCore.Qt.DisplayRole:

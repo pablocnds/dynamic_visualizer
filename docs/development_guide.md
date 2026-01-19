@@ -3,6 +3,11 @@
 ## Purpose
 Desktop GUI (PySide6 + PyQtGraph) that loads JSON data, infers sensible defaults, and lets users switch visualization styles or apply TOML “cards” for richer layouts and overlays.
 
+## Local Packaging
+- Install editable + dev tools: `pip install -e ".[dev]"`
+- Run the app with `dynamic-visualizer` or `python -m visualizer`.
+- Build/test a wheel: `python -m build` then install `dist/*.whl` in a clean environment.
+
 ## Architecture Snapshot
 - **Data access:** `DatasetRepository` loads JSON with length/number validation, coerces types, caches by path+mtime. JSON payloads are schema-validated when `jsonschema` is installed. Dataset discovery is recursive when a folder is chosen.
 - **Interpretation:** `DefaultInterpreter` maps series datasets to `PlotSpec` and table datasets to `TableSpec`, infers line vs scatter (monotonic numeric X → line), and sorts X/Y for line plots.
@@ -11,7 +16,7 @@ Desktop GUI (PySide6 + PyQtGraph) that loads JSON data, infers sensible defaults
 - **Cards:** Parsed by `CardLoader`; `CardSession` resolves variables, enforces pivot for multi-variable cards, supports subcards and overlays. `chart_style` now supports structured styles (`{ name = \"line\", ... }`) that flow through to the visualization registry; defaults cascade: per-series → subcard → global. `overlay_variable` lets overlays auto-enumerate series (e.g., multiple fragments) without exposing them as selectable variables.
 
 ## Data Contracts
-- JSON series: must match `schema/data_payload.schema.json` shape (`data.x_axis`/`data.y_axis` arrays with equal, non-empty lengths); non-numeric Y is rejected; labels are optional.
+- JSON series: must match `src/visualizer/schema/data_payload.schema.json` (`data.x_axis`/`data.y_axis` arrays with equal, non-empty lengths); non-numeric Y is rejected; labels are optional.
 - JSON tables: use `data.column_names`/`data.row_names` with a row-major `data.content` matrix; lengths must match.
 - `data.kind` is optional (`series` or `table`); when omitted the loader auto-detects based on the available fields.
 - CSV is temporarily disabled and will return in a future update.

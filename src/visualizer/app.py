@@ -1,15 +1,10 @@
 from __future__ import annotations
 
 import sys
-from pathlib import Path
 
 from PySide6 import QtWidgets
 
 from visualizer.gui.main_window import MainWindow
-
-
-def _repo_root() -> Path:
-    return Path(__file__).resolve().parents[2]
 
 
 def main() -> None:

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from importlib import resources
+from importlib.resources.abc import Traversable
 from pathlib import Path
 from typing import Dict, List, Sequence
 try:
@@ -25,12 +27,9 @@ class DatasetRepository:
 
     def __init__(self, schema_path: Path | None = None) -> None:
         self._cache: Dict[Path, CachedEntry] = {}
-        if schema_path:
-            self._schema_path = schema_path
-        else:
-            repo_schema = Path(__file__).resolve().parents[3] / "schema" / "data_payload.schema.json"
-            fallback_schema = Path(__file__).resolve().parents[2] / "schema" / "data_payload.schema.json"
-            self._schema_path = repo_schema if repo_schema.exists() else fallback_schema
+        self._schema_path: Path | Traversable = (
+            schema_path if schema_path else self._default_schema_path()
+        )
         self._json_validator = self._load_json_validator()
         self._schema_validation_enabled = self._json_validator is not None
 
@@ -82,12 +81,16 @@ class DatasetRepository:
         return self._load_series_payload(payload, data_section, path)
 
     def _validate_json_schema(self, payload: dict, path: Path) -> None:
-        if not self._json_validator:
+        if not self._json_validator or jsonschema is None:
             return
         try:
             self._json_validator.validate(payload)
         except jsonschema.ValidationError as exc:
             raise ValueError(f"JSON schema validation failed for {path}: {exc.message}") from exc
+
+    @staticmethod
+    def _default_schema_path() -> Traversable:
+        return resources.files("visualizer.schema").joinpath("data_payload.schema.json")
 
     def _infer_kind(self, data_section: dict, path: Path) -> DataKind:
         kind_value = data_section.get("kind")

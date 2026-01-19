@@ -4,13 +4,17 @@ Interactive framework for loading processed analytical datasets (JSON) and rende
 
 ## Getting Started
 1. `python3 -m venv .venv && source .venv/bin/activate`
-2. `pip install -r requirements.txt`
-3. Launch the prototype GUI via `PYTHONPATH=src python -m visualizer.app`.
+2. `pip install -e ".[dev]"`
+3. Launch the GUI via `dynamic-visualizer` (or `python -m visualizer`).
 4. Use the File menu to open a data folder (or add individual files) to populate the sidebar. Use File > Open Card File to load card definitions for the session (last-used paths are remembered across runs).
 5. Follow `docs/development_guide.md` (architecture/roadmap) and `docs/card_specification.md` (card format) as you extend the project.
 
+## Local Packaging
+- Build a wheel with `python -m build`.
+- Test install in a clean environment with `pip install dist/*.whl`.
+
 ## Data Formats
-- JSON inputs must satisfy `schema/data_payload.schema.json` (top-level metadata plus a `data` object describing either a series or a table).
+- JSON inputs must satisfy `src/visualizer/schema/data_payload.schema.json` (packaged as `visualizer/schema/data_payload.schema.json`).
 - Series data uses `x_axis`/`y_axis` arrays; table data uses `column_names`/`row_names` with a row-major `content` matrix.
 - `data.kind` is optional (`series` or `table`); when omitted the loader auto-detects based on the available fields.
 - CSV support is temporarily disabled and will return in a future update.

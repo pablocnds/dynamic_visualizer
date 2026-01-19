@@ -19,7 +19,6 @@ class PlotRenderer:
         pg.setConfigOption("background", "w")
         pg.setConfigOption("foreground", "k")
         self._colorbars: dict[int, list[pg.ColorBarItem]] = {}
-        self._axis_pen = pg.mkPen(color=(0, 0, 0, 120), width=1)
 
     def render(self, widget: pg.PlotWidget, spec: PlotSpec) -> None:
         self._clear_legend(widget)
@@ -31,14 +30,14 @@ class PlotRenderer:
         plot_item.showAxis("bottom")
 
         if spec.visualization == VisualizationType.LINE:
-            curve = widget.plot(
+            widget.plot(
                 spec.x,
                 spec.y,
                 pen=pg.mkPen(color=(50, 110, 240), width=2),
                 symbol=None,
             )
         elif spec.visualization == VisualizationType.SCATTER:
-            curve = widget.plot(
+            widget.plot(
                 spec.x,
                 spec.y,
                 pen=None,
@@ -81,7 +80,7 @@ class PlotRenderer:
             color = pg.intColor(index, hues=len(specs) * 2)
             label = getattr(spec, "label", None) or spec.dataset_id
             if spec.visualization == VisualizationType.LINE:
-                curve = widget.plot(
+                widget.plot(
                     spec.x,
                     spec.y,
                     pen=pg.mkPen(color=color, width=2),
@@ -89,7 +88,7 @@ class PlotRenderer:
                     name=label,
                 )
             else:
-                curve = widget.plot(
+                widget.plot(
                     spec.x,
                     spec.y,
                     pen=None,

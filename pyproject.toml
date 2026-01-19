@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=68", "setuptools_scm[toml]>=8"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dynamic-visualizer"
+description = "Interactive framework for loading processed analytical datasets and rendering them in a PySide6/PyQtGraph GUI."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "PySide6>=6.7",
+  "pyqtgraph>=0.13",
+  "platformdirs>=4.2",
+  "jsonschema>=4.22",
+]
+dynamic = ["version"]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.1",
+  "build>=1.2",
+]
+
+[project.scripts]
+dynamic-visualizer = "visualizer.app:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+visualizer = ["assets/icons/*.png", "schema/*.json"]
+
+[tool.setuptools_scm]
+write_to = "src/visualizer/_version.py"
+write_to_template = "__version__ = \"{version}\"\n"
+fallback_version = "0.1.0"

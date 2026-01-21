@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import warnings
 from dataclasses import dataclass
 from importlib import resources
 from importlib.resources.abc import Traversable
@@ -11,7 +12,7 @@ try:
 except ImportError:  # pragma: no cover - optional dependency for schema validation
     jsonschema = None
 
-from .models import DataKind, DataPayload, Dataset, TableDataset
+from .models import DataKind, DataPayload, Dataset, RangeDataset, TableDataset
 
 SUPPORTED_EXTENSIONS = (".json",)
 
@@ -19,7 +20,7 @@ SUPPORTED_EXTENSIONS = (".json",)
 @dataclass
 class CachedEntry:
     modified_ns: int
-    dataset: Dataset
+    dataset: DataPayload
 
 
 class DatasetRepository:
@@ -78,6 +79,8 @@ class DatasetRepository:
         kind = self._infer_kind(data_section, path)
         if kind == DataKind.TABLE:
             return self._load_table_payload(payload, data_section, path)
+        if kind == DataKind.RANGE:
+            return self._load_range_payload(payload, data_section, path)
         return self._load_series_payload(payload, data_section, path)
 
     def _validate_json_schema(self, payload: dict, path: Path) -> None:
@@ -100,7 +103,23 @@ class DatasetRepository:
                 return DataKind.SERIES
             if normalized in {"table", "matrix"}:
                 return DataKind.TABLE
+            if normalized == "range":
+                warnings.warn(
+                    f"Data payload in {path} uses data.kind = 'range'; "
+                    "use data.kind = 'ranges' instead.",
+                    UserWarning,
+                )
+                return DataKind.RANGE
+            if normalized == "ranges":
+                return DataKind.RANGE
             raise ValueError(f"Unsupported data kind '{kind_value}' in {path}")
+        if "ranges" in data_section:
+            warnings.warn(
+                f"Data payload in {path} uses 'ranges' without an explicit data.kind; "
+                "set data.kind = 'ranges' to make the intent clear.",
+                UserWarning,
+            )
+            return DataKind.RANGE
         if any(key in data_section for key in ("column_names", "row_names", "content")):
             return DataKind.TABLE
         return DataKind.SERIES
@@ -140,6 +159,19 @@ class DatasetRepository:
             column_names=column_names,
             row_names=row_names,
             content=content,
+            metadata={k: v for k, v in payload.items() if k != "data"},
+        )
+
+    def _load_range_payload(self, payload: dict, data_section: dict, path: Path) -> RangeDataset:
+        self._validate_range_payload(data_section, path)
+        raw_ranges = data_section.get("ranges") or []
+        ranges = self._coerce_ranges(raw_ranges, path)
+        return RangeDataset(
+            identifier=str(payload.get("dataset") or path.stem),
+            source_path=path,
+            ranges=ranges,
+            x_label=data_section.get("x_label"),
+            y_label=data_section.get("y_label"),
             metadata={k: v for k, v in payload.items() if k != "data"},
         )
 
@@ -188,6 +220,16 @@ class DatasetRepository:
                     f"Column count mismatch in row {idx} (expected {expected_cols}) in {path}"
                 )
 
+    def _validate_range_payload(self, data_section: dict, path: Path) -> None:
+        if "ranges" not in data_section:
+            raise ValueError(f"JSON range payload missing 'ranges': {path}")
+        if not isinstance(data_section["ranges"], Sequence) or isinstance(
+            data_section["ranges"], (str, bytes)
+        ):
+            raise ValueError(f"'ranges' must be an array of [start, end] pairs: {path}")
+        if len(data_section["ranges"]) == 0:
+            raise ValueError(f"'ranges' cannot be empty: {path}")
+
     @staticmethod
     def _coerce_sequence(values: Sequence) -> List[float | str | bool]:
         coerced: List[float | str | bool] = []
@@ -211,6 +253,24 @@ class DatasetRepository:
             except (TypeError, ValueError) as exc:
                 raise ValueError("Non-numeric value encountered") from exc
         return numeric
+
+    def _coerce_ranges(self, values: Sequence, path: Path) -> List[tuple[float, float]]:
+        ranges: List[tuple[float, float]] = []
+        for idx, pair in enumerate(values):
+            if not isinstance(pair, Sequence) or isinstance(pair, (str, bytes)):
+                raise ValueError(f"Range entry {idx} must be an array: {path}")
+            if len(pair) != 2:
+                raise ValueError(f"Range entry {idx} must have exactly two values: {path}")
+            try:
+                start = float(pair[0])
+                end = float(pair[1])
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"Range entry {idx} must be numeric: {path}") from exc
+            if start <= end:
+                ranges.append((start, end))
+            else:
+                ranges.append((end, start))
+        return ranges
 
     @staticmethod
     def _validate_axis_lengths(

@@ -136,6 +136,16 @@ def test_colorbars_absent_for_1d_cards(app: QtWidgets.QApplication) -> None:  # 
     assert len(colorbars_after) == 0
 
 
+def test_range_overlay_renders_items(app: QtWidgets.QApplication) -> None:  # noqa: ARG001
+    window = _create_window()
+    card_path = window._cards_dir / "12-range_overlay_card.toml"  # type: ignore[attr-defined]
+    window._activate_card(card_path)
+    plot = window._panel_plots[0] if window._panel_plots else None  # type: ignore[attr-defined]
+    assert plot is not None
+    items = plot.getPlotItem().items
+    assert any(isinstance(item, pg.LinearRegionItem) for item in items)
+
+
 def test_colorbars_absent_after_rerender(app: QtWidgets.QApplication) -> None:  # noqa: ARG001
     window = _create_window()
     window._activate_card(window._cards_dir / "10-overlay_1d_card.toml")  # type: ignore[attr-defined]

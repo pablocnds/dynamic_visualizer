@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from visualizer.data.models import Dataset, TableDataset
+from visualizer.data.models import Dataset, RangeDataset, TableDataset
 from visualizer.interpretation.specs import DefaultInterpreter, TableSpec, VisualizationType
 
 
@@ -58,3 +58,18 @@ def test_table_spec_builds_from_dataset() -> None:
     assert isinstance(spec, TableSpec)
     assert list(spec.column_names) == ["a", "b"]
     assert list(spec.row_names) == [1, 2]
+
+
+def test_range_spec_builds_from_dataset() -> None:
+    dataset = RangeDataset(
+        identifier="ranges",
+        source_path=Path("dummy"),
+        ranges=[(1.0, 2.0), (3.0, 4.0)],
+        x_label="Time",
+    )
+    interpreter = DefaultInterpreter()
+
+    spec = interpreter.build_spec(dataset)
+
+    assert spec.visualization == VisualizationType.RANGE
+    assert spec.ranges == [(1.0, 2.0), (3.0, 4.0)]

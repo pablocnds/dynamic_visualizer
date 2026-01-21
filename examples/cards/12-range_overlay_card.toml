@@ -1,0 +1,11 @@
+# Range overlay example: translucent bands behind a line series.
+
+[global]
+pivot_chart = "{{CLASS}}"
+chart_style = ["line", { name = "ranges", palette = "cividis", alpha = 0.25 }]
+series_label = ["Signal", "Ranges"]
+
+filepath = [
+  "<CARD_DIR>/../data/overlay_demo/{{CLASS}}/base_signal.json",
+  "<CARD_DIR>/../data/overlay_demo/{{CLASS}}/ranges.json"
+]

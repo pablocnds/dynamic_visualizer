@@ -50,7 +50,7 @@ def test_eventline_render_does_not_raise(app: QtWidgets.QApplication) -> None:
     renderer.render(widget, spec)
 
 
-def test_overlay_rejects_mixed_dimensions(app: QtWidgets.QApplication) -> None:
+def test_overlay_allows_mixed_dimensions(app: QtWidgets.QApplication) -> None:
     renderer = PlotRenderer()
     widget = pg.PlotWidget()
     specs = [
@@ -73,8 +73,7 @@ def test_overlay_rejects_mixed_dimensions(app: QtWidgets.QApplication) -> None:
             visualization=VisualizationType.COLORMAP,
         ),
     ]
-    with pytest.raises(ValueError):
-        renderer.render_multiple(widget, specs)
+    renderer.render_multiple(widget, specs)
 
 
 def test_eventline_accepts_single_dimension(app: QtWidgets.QApplication) -> None:
@@ -116,6 +115,22 @@ def test_overlay_allows_one_dimensional_mix(app: QtWidgets.QApplication) -> None
         ),
     ]
     renderer.render_multiple(widget, specs)
+
+
+def test_range_render_does_not_raise(app: QtWidgets.QApplication) -> None:
+    renderer = PlotRenderer()
+    widget = pg.PlotWidget()
+    spec = PlotSpec(
+        dataset_id="d6",
+        label=None,
+        x=[],
+        y=[],
+        x_label="time",
+        y_label=None,
+        visualization=VisualizationType.RANGE,
+        ranges=[(1.0, 2.0), (3.0, 4.0)],
+    )
+    renderer.render(widget, spec)
 
 
 def test_colormap_rect_alignment(app: QtWidgets.QApplication) -> None:

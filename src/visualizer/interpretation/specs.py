@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Sequence
+from typing import Any, Sequence
 
-from visualizer.data.models import DataPayload, Dataset, TableDataset
+from visualizer.data.models import DataPayload, Dataset, RangeDataset, TableDataset
 
 
 class VisualizationType(str, Enum):
@@ -12,6 +12,7 @@ class VisualizationType(str, Enum):
     SCATTER = "scatter"
     COLORMAP = "colormap"
     EVENTLINE = "eventline"
+    RANGE = "ranges"
 
     @classmethod
     def from_string(cls, value: str) -> VisualizationType:
@@ -30,8 +31,13 @@ class PlotSpec:
     x_label: str | None
     y_label: str | None
     visualization: VisualizationType
+    ranges: Sequence[tuple[float, float]] | None = None
+    style_params: dict[str, Any] | None = None
 
     def cache_key(self) -> tuple:
+        params_key = None
+        if self.style_params:
+            params_key = tuple(sorted((key, repr(value)) for key, value in self.style_params.items()))
         return (
             self.dataset_id,
             self.label,
@@ -40,6 +46,8 @@ class PlotSpec:
             self.x_label,
             self.y_label,
             self.visualization,
+            tuple(self.ranges) if self.ranges else None,
+            params_key,
         )
 
 
@@ -69,16 +77,25 @@ class DefaultInterpreter:
         dataset: DataPayload,
         override: VisualizationType | None = None,
         label: str | None = None,
+        style_params: dict[str, Any] | None = None,
     ) -> PlotSpec | TableSpec:
         if isinstance(dataset, TableDataset):
             return self.build_table_spec(dataset, label=label)
-        return self.build_plot_spec(dataset, override=override, label=label)
+        if isinstance(dataset, RangeDataset):
+            return self.build_range_spec(dataset, override=override, label=label, style_params=style_params)
+        return self.build_plot_spec(
+            dataset,
+            override=override,
+            label=label,
+            style_params=style_params,
+        )
 
     def build_plot_spec(
         self,
         dataset: Dataset,
         override: VisualizationType | None = None,
         label: str | None = None,
+        style_params: dict[str, Any] | None = None,
     ) -> PlotSpec:
         visualization = override or self._infer_visualization(dataset)
         x_values = list(dataset.x)
@@ -98,6 +115,7 @@ class DefaultInterpreter:
             x_label=dataset.x_label or "X Axis",
             y_label=dataset.y_label or "Y Axis",
             visualization=visualization,
+            style_params=style_params,
         )
 
     def build_table_spec(self, dataset: TableDataset, label: str | None = None) -> TableSpec:
@@ -107,6 +125,26 @@ class DefaultInterpreter:
             column_names=list(dataset.column_names),
             row_names=list(dataset.row_names),
             content=[list(row) for row in dataset.content],
+        )
+
+    def build_range_spec(
+        self,
+        dataset: RangeDataset,
+        override: VisualizationType | None = None,
+        label: str | None = None,
+        style_params: dict[str, Any] | None = None,
+    ) -> PlotSpec:
+        visualization = override or VisualizationType.RANGE
+        return PlotSpec(
+            dataset_id=dataset.identifier,
+            label=label or dataset.identifier,
+            x=[],
+            y=[],
+            x_label=dataset.x_label or "X Axis",
+            y_label=dataset.y_label or "Y Axis",
+            visualization=visualization,
+            ranges=list(dataset.ranges),
+            style_params=style_params,
         )
 
     def _infer_visualization(self, dataset: Dataset) -> VisualizationType:

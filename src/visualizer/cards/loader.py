@@ -41,7 +41,8 @@ class CardLoader:
             or global_section.get("filepath")
             or data.get("card", {}).get("filepath")
         )
-        chart_style = _parse_chart_style(data.get("chart_style") or global_section.get("chart_style"))
+        chart_style_raw = data.get("chart_style") or global_section.get("chart_style")
+        chart_style = _maybe_first_style(chart_style_raw)
         pivot = data.get("pivot_chart") or global_section.get("pivot_chart")
         synchronize_axis = bool(global_section.get("synchronize_axis", False))
         subcards_section = data.get("subcards") or {}
@@ -116,7 +117,7 @@ class CardLoader:
                 overlay_panels["overlay"] = OverlayDefinition(
                     name="overlay",
                     filepaths=filepaths,
-                    chart_styles=_normalize_style_list(chart_style, len(filepaths)),
+                    chart_styles=_normalize_style_list(chart_style_raw, len(filepaths)),
                     overlay_variable=overlay_var,
                     overlay_labels=_normalize_label_list(data.get("series_label"), len(filepaths)),
                     overlay_path_filter=_normalize_variable(data.get("overlay_path_filter")),

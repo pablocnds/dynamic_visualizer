@@ -98,6 +98,7 @@ def test_overlay_card_definitions_and_series() -> None:
     matches = loader.resolve_paths(definition)
     session = CardSession(definition=definition, matches=matches)
     overlay_def = definition.overlay_panels["overlay"]
+    assert [style.name if style else None for style in overlay_def.chart_styles] == ["line", "scatter"]
     overlay_series = session._build_overlay_series(overlay_def, session.selection)
     assert len(overlay_series.series) == 2
 

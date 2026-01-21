@@ -3,7 +3,7 @@ import json
 
 import pytest
 
-from visualizer.data.models import TableDataset
+from visualizer.data.models import RangeDataset, TableDataset
 from visualizer.data.repository import DatasetRepository
 
 
@@ -78,6 +78,61 @@ def test_load_table_dataset(tmp_path: Path) -> None:
     assert list(dataset.column_names) == ["a", "b"]
     assert list(dataset.row_names) == [1.0, 2.0]
     assert dataset.content[0][0] == 10.0
+
+
+def test_load_range_dataset(tmp_path: Path) -> None:
+    range_path = tmp_path / "ranges.json"
+    payload = {
+        "dataset": "ranges_demo",
+        "data": {
+            "kind": "ranges",
+            "x_label": "Time",
+            "ranges": [[1, 2], [5, 4]],
+        },
+    }
+    range_path.write_text(json.dumps(payload))
+    repo = DatasetRepository()
+
+    dataset = repo.load(range_path)
+
+    assert isinstance(dataset, RangeDataset)
+    assert dataset.x_label == "Time"
+    assert list(dataset.ranges) == [(1.0, 2.0), (4.0, 5.0)]
+
+
+def test_range_payload_warns_when_kind_missing(tmp_path: Path) -> None:
+    range_path = tmp_path / "ranges_warn.json"
+    payload = {
+        "dataset": "ranges_warn",
+        "data": {
+            "ranges": [[0, 1], [2, 3]],
+        },
+    }
+    range_path.write_text(json.dumps(payload))
+    repo = DatasetRepository()
+
+    with pytest.warns(UserWarning):
+        dataset = repo.load(range_path)
+
+    assert isinstance(dataset, RangeDataset)
+
+
+def test_range_kind_alias_warns(tmp_path: Path) -> None:
+    range_path = tmp_path / "ranges_alias.json"
+    payload = {
+        "dataset": "ranges_alias",
+        "data": {
+            "kind": "range",
+            "ranges": [[0, 1], [2, 3]],
+        },
+    }
+    range_path.write_text(json.dumps(payload))
+    repo = DatasetRepository()
+
+    with pytest.warns(UserWarning):
+        dataset = repo.load(range_path)
+
+    assert isinstance(dataset, RangeDataset)
 
 
 def test_table_validation_rejects_mismatched_dimensions(tmp_path: Path) -> None:

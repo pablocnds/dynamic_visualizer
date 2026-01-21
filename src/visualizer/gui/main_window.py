@@ -748,7 +748,7 @@ class MainWindow(QtWidgets.QMainWindow):
     def _draw_plot(
         self,
         widget: pg.PlotWidget,
-        dataset: Dataset,
+        dataset: DataPayload,
         path: Path,
         card_style: Optional[ChartStyle],
         panel_override: VisualizationType | None = None,
@@ -757,7 +757,14 @@ class MainWindow(QtWidgets.QMainWindow):
             card_style=card_style,
             panel_override=panel_override,
         )
-        spec = self._interpreter.build_plot_spec(dataset, override=override)
+        style_params = card_style.params if card_style else None
+        spec = self._interpreter.build_spec(
+            dataset,
+            override=override,
+            style_params=style_params,
+        )
+        if not isinstance(spec, PlotSpec):
+            return
         self._renderer.render(widget, spec)
         widget.enableAutoRange(x=True, y=True)
         self._current_spec = spec
@@ -797,11 +804,13 @@ class MainWindow(QtWidgets.QMainWindow):
                 card_style=default_style,
                 panel_override=override,
             )
+            style_params = default_style.params if default_style else None
             specs.append(
-                self._interpreter.build_plot_spec(
+                self._interpreter.build_spec(
                     dataset,
                     override=viz,
                     label=label,
+                    style_params=style_params,
                 )
             )
         if not specs:

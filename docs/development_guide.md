@@ -11,14 +11,15 @@ Desktop GUI (PySide6 + PyQtGraph) that loads JSON data, infers sensible defaults
 ## Architecture Snapshot
 - **Data access:** `DatasetRepository` loads JSON with length/number validation, coerces types, caches by path+mtime. JSON payloads are schema-validated when `jsonschema` is installed. Dataset discovery is recursive when a folder is chosen.
 - **Interpretation:** `DefaultInterpreter` maps series datasets to `PlotSpec` and table datasets to `TableSpec`, infers line vs scatter (monotonic numeric X → line), and sorts X/Y for line plots.
-- **Visualization:** `PlotRenderer` draws single or multiple specs on PyQtGraph widgets, including 1-D colormap strips and event lines; `TableRenderer` handles tabular views.
+- **Visualization:** `PlotRenderer` draws single or multiple specs on PyQtGraph widgets, including 1-D colormap strips, event lines, and range bands; `TableRenderer` handles tabular views.
 - **Controller/orchestration:** `SessionController` owns card loading, matching, selection, and panel planning (including overlay expansion). `MainWindow` handles only the PySide6 widgets and delegates data/card logic to the controller.
 - **Cards:** Parsed by `CardLoader`; `CardSession` resolves variables, enforces pivot for multi-variable cards, supports subcards and overlays. `chart_style` now supports structured styles (`{ name = \"line\", ... }`) that flow through to the visualization registry; defaults cascade: per-series → subcard → global. `overlay_variable` lets overlays auto-enumerate series (e.g., multiple fragments) without exposing them as selectable variables.
 
 ## Data Contracts
 - JSON series: must match `src/visualizer/schema/data_payload.schema.json` (`data.x_axis`/`data.y_axis` arrays with equal, non-empty lengths); non-numeric Y is rejected; labels are optional.
 - JSON tables: use `data.column_names`/`data.row_names` with a row-major `data.content` matrix; lengths must match.
-- `data.kind` is optional (`series` or `table`); when omitted the loader auto-detects based on the available fields.
+- JSON ranges: use `data.ranges` as an array of `[start, end]` pairs (numeric); labels are optional; use `data.kind = "ranges"` to avoid warnings (legacy `data.kind = "range"` still loads with a warning).
+- `data.kind` is optional (`series`, `table`, or `ranges`); when omitted the loader auto-detects based on the available fields.
 - CSV is temporarily disabled and will return in a future update.
 
 ## Card Rules (see `docs/card_specification.md`)

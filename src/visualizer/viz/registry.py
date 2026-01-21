@@ -72,6 +72,12 @@ class VisualizationRegistry:
                 visualization=VisualizationType.EVENTLINE,
                 aliases=("events", "spikes"),
             ),
+            VisualizationHandler(
+                name="ranges",
+                label="Ranges (1D)",
+                visualization=VisualizationType.RANGE,
+                aliases=("range",),
+            ),
         ]
 
 

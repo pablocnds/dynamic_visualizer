@@ -9,6 +9,7 @@ from typing import Any, Dict, Sequence
 class DataKind(str, Enum):
     SERIES = "series"
     TABLE = "table"
+    RANGE = "ranges"
 
 
 @dataclass(frozen=True)
@@ -59,4 +60,26 @@ class TableDataset:
         )
 
 
-DataPayload = Dataset | TableDataset
+@dataclass(frozen=True)
+class RangeDataset:
+    """Canonical representation of range data along the X axis."""
+
+    identifier: str
+    source_path: Path
+    ranges: Sequence[tuple[float, float]]
+    x_label: str | None = None
+    y_label: str | None = None
+    metadata: Dict[str, Any] = field(default_factory=dict)
+    kind: DataKind = DataKind.RANGE
+
+    def cache_key(self) -> tuple[Any, ...]:
+        return (
+            self.kind,
+            self.identifier,
+            tuple(tuple(pair) for pair in self.ranges),
+            self.x_label,
+            self.y_label,
+        )
+
+
+DataPayload = Dataset | TableDataset | RangeDataset

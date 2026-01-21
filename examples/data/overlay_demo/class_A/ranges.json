@@ -1,0 +1,8 @@
+{
+  "dataset": "class_A_ranges",
+  "data": {
+    "kind": "ranges",
+    "x_label": "Time",
+    "ranges": [[0.5, 1.5], [2.1, 2.6], [3.3, 4.1]]
+  }
+}

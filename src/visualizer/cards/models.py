@@ -21,6 +21,8 @@ class SubcardDefinition:
     overlay_variable: Optional[str] = None
     chart_style: Optional["ChartStyle"] = None
     chart_height: Optional[float] = None
+    show_x_axis: Optional[bool] = None
+    show_y_axis: Optional[bool] = None
 
 
 @dataclass(frozen=True)
@@ -33,6 +35,8 @@ class CardDefinition:
     overlay_panels: Dict[str, "OverlayDefinition"] = field(default_factory=dict)
     variable_filters: Dict[str, str] = field(default_factory=dict)
     synchronize_axis: bool = False
+    show_x_axis: Optional[bool] = None
+    show_y_axis: Optional[bool] = None
 
     def has_subcards(self) -> bool:
         return bool(self.subcards)
@@ -185,7 +189,7 @@ class CardSession:
         for path_str, style, series_label in zip(overlay_def.filepaths, styles, labels):
             template = path_str.replace("<CARD_DIR>", card_dir)
             overlay_var = overlay_def.overlay_variable
-            if overlay_var and f"{{{{{overlay_var}}}}}" in template:
+            if overlay_var and _template_has_variable(template, overlay_var):
                 expanded_paths = _enumerate_overlay_paths(
                     template,
                     overlay_var,
@@ -244,6 +248,11 @@ def _replace_variables(template: str, values: Dict[str, str]) -> str:
         result = result.replace(f"{{{{{key}}}}}", value)
         result = result.replace(f"{{{{ {key} }}}}", value)
     return result
+
+
+def _template_has_variable(template: str, variable: str) -> bool:
+    pattern = rf"{{{{\s*{re.escape(variable)}\s*}}}}"
+    return re.search(pattern, template) is not None
 
 
 def _expand_wildcard_paths(path_template: str) -> Path | None:

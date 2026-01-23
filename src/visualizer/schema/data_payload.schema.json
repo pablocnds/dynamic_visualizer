@@ -35,7 +35,7 @@
           "items": {
             "type": "number"
           },
-          "description": "Values plotted along the Y-axis (dependent measurements)"
+          "description": "Optional values plotted along the Y-axis (dependent measurements)"
         },
         "column_names": {
           "type": "array",
@@ -78,7 +78,7 @@
       "allOf": [
         {
           "anyOf": [
-            { "required": ["x_axis", "y_axis"] },
+            { "required": ["x_axis"] },
             { "required": ["column_names", "row_names", "content"] },
             { "required": ["ranges"] }
           ]

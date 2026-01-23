@@ -161,17 +161,15 @@ def test_colorbars_absent_after_rerender(app: QtWidgets.QApplication) -> None:  
     assert len(second_colorbars) == 0
 
 
-def test_synchronized_axes_hide_redundant_bottom_axes(app: QtWidgets.QApplication) -> None:  # noqa: ARG001
+def test_synchronized_axes_respect_axis_visibility(app: QtWidgets.QApplication) -> None:  # noqa: ARG001
     window = _create_window()
     window._activate_card(window._cards_dir / "11-sync_demo_card.toml")  # type: ignore[attr-defined]
     plots = window._panel_plots  # type: ignore[attr-defined]
     assert len(plots) >= 2
-    for idx, plot in enumerate(plots):
-        axis = plot.getPlotItem().getAxis("bottom")
-        if idx < len(plots) - 1:
-            assert getattr(plot, "_bottom_axis_hidden", False) is True
-        else:
-            assert getattr(plot, "_bottom_axis_hidden", False) is False
+    top_axis = plots[0].getPlotItem().getAxis("bottom")
+    bottom_axis = plots[-1].getPlotItem().getAxis("bottom")
+    assert top_axis.isVisible() is True
+    assert bottom_axis.isVisible() is False
 
 
 def test_missing_panels_clear_previous_items(

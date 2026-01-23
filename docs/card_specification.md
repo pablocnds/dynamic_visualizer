@@ -7,9 +7,10 @@ TOML cards describe where to find datasets and how to render them. Variables are
 - Variables: `{{VAR}}` placeholders replace exactly one directory or filename segment and default to the first alphabetical value. Use named variables even when only one exists; a pivot is optional when there is only one variable.
 - Wildcard (`*`): plain glob segment only; it is not a variable and never exposed in the UI.
 - Pivot: `pivot_chart = "{{VAR}}"` identifies which variable cycles when moving prev/next.
-- Styles: `chart_style` accepts `line`, `scatter`, `colormap` (1-D heatmap strip), `eventline` (1-D spike/event line), or `ranges` (1-D range bands). You can use the string shorthand (`"line"`) or an object with a `name` and optional parameters, e.g. `chart_style = { name = "line", width = 3 }` or `chart_style = { name = "ranges", palette = "cividis", alpha = 0.25 }`. Subcards and overlays may override it; missing overrides fall back to the card’s global style. One-dimensional plots can overlay with each other or with 2-D plots; in mixed overlays, 1-D data renders behind the 2-D plot with transparency. Aliases are accepted: `colormap_line`/`heatmap1d` → `colormap`, `events`/`spikes` → `eventline`, `range` → `ranges`. Table datasets ignore `chart_style` and always render as tables.
+- Styles: `chart_style` accepts `line`, `scatter`, `colormap` (1-D heatmap strip), `eventline` (1-D spike/event line), or `ranges` (1-D range bands). You can use the string shorthand (`"line"`) or an object with a `name` and optional parameters, e.g. `chart_style = { name = "line", width = 3 }` or `chart_style = { name = "ranges", palette = "cividis", alpha = 0.25 }`. Subcards and overlays may override it; missing overrides fall back to the card’s global style. One-dimensional plots can overlay with each other or with 2-D plots; in mixed overlays, 1-D data renders behind the 2-D plot with transparency. Eventline plots ignore Y values (when omitted they default to 1s). Aliases are accepted: `colormap_line`/`heatmap1d` → `colormap`, `events`/`spikes` → `eventline`, `range` → `ranges`. Table datasets render as tables when no `chart_style` is specified; if a `chart_style` is set, the dataset must be compatible (table data with a chart style is rejected).
 - Range style params: `palette` (colormap name), `colors` (explicit list of colors), and `alpha` (0-1 or 0-255). When both `palette` and `colors` are provided, `colors` wins.
 - Synchronization: compound cards may set `synchronize_axis = true` under `[global]` to link the X axis across panels (panning/zooming one updates the others).
+- Axis visibility: `show_x_axis` and `show_y_axis` can be set globally or per subcard to explicitly show/hide axes for plot panels. When `synchronize_axis = true`, X axes are hidden by default unless explicitly enabled. `show_x_axis` controls the 1-D top overlay axis as well as the 2-D bottom axis; `show_y_axis` applies only to 2-D plots.
 - Overlay discovery: `overlay_variable` marks a variable used only for overlay enumeration; it is not user-selectable and is removed from card variables/pivot logic. Variable-level filters (see below) apply to overlay variables as well; optional `overlay_path_filter` (regex on the resolved path) can further constrain entries.
 
 ## Global Section (optional)
@@ -17,6 +18,8 @@ TOML cards describe where to find datasets and how to render them. Variables are
 [global]
 chart_style = "line"
 pivot_chart = "{{CLASS}}"  # required when >1 variable; optional for a single variable
+show_x_axis = true
+show_y_axis = true
 ```
 
 ## Simple Card
@@ -42,6 +45,7 @@ chart_style = "line"
 [subcards.time_series]
 chart_height = "40%"        # remaining height is split across unspecified panels
 filepath = "<CARD_DIR>/../data/.../{{DATASET}}/{{CLASS}}/time_series.json"
+show_x_axis = false
 
 [subcards.scatter]
 chart_style = "scatter"

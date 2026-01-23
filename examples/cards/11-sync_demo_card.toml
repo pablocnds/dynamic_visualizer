@@ -6,6 +6,7 @@ synchronize_axis = true
 
 [subcards.top]
 filepath = "<CARD_DIR>/../data/overlay_demo/{{CLASS}}/base_signal.json"
+show_x_axis = true
 
 [subcards.bottom]
 filepath = "<CARD_DIR>/../data/overlay_demo/{{CLASS}}/series-{{SERIES}}.json"

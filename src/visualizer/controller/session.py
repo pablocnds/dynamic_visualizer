@@ -6,8 +6,9 @@ from typing import Dict, List, Optional, Tuple
 
 from visualizer.cards.loader import CardLoader
 from visualizer.cards.models import CardSession, ChartStyle, SeriesDefinition, SubcardDefinition
-from visualizer.data.models import DataPayload
+from visualizer.data.models import DataPayload, Dataset, RangeDataset, TableDataset
 from visualizer.data.repository import DatasetRepository
+from visualizer.interpretation.specs import VisualizationType
 
 
 @dataclass(frozen=True)
@@ -89,7 +90,7 @@ class SessionController:
             return []
         return self.card_session.available_values(variable, constrained=constrained)
 
-    def build_panel_plans(self) -> Tuple[List[PanelPlan], List[str]]:
+    def build_panel_plans(self) -> Tuple[List[PanelPlan], List[str], List[str]]:
         """Resolve the current card selection into datasets ready for rendering."""
 
         if not self.card_session:
@@ -98,6 +99,7 @@ class SessionController:
         match_map = self.card_session.current_matches()
         plans: List[PanelPlan] = []
         missing: List[str] = []
+        incompatible: List[str] = []
 
         for subcard in self.card_session.definition.subcards:
             match = match_map.get(subcard.name)
@@ -126,19 +128,18 @@ class SessionController:
 
             for series_def in series_defs:
                 panel_paths.append(series_def.path)
+                dataset = None
                 try:
                     dataset = self._repository.load(series_def.path)
                 except Exception as exc:
                     missing.append(f"{series_def.path.name} ({exc})")
-                    series_payloads.append(
-                        PanelSeries(
-                            dataset=None,
-                            path=series_def.path,
-                            chart_style=series_def.chart_style,
-                            label=series_def.label,
-                        )
+                if dataset is not None:
+                    compatible, message = self._is_chart_style_compatible(
+                        dataset, series_def.chart_style
                     )
-                    continue
+                    if not compatible:
+                        incompatible.append(f"{subcard.name}: {series_def.path.name} ({message})")
+                        dataset = None
                 series_payloads.append(
                     PanelSeries(
                         dataset=dataset,
@@ -150,7 +151,28 @@ class SessionController:
 
             plans.append(PanelPlan(subcard=subcard, series=series_payloads, paths=panel_paths))
 
-        return plans, missing
+        return plans, missing, incompatible
+
+    def _is_chart_style_compatible(
+        self, dataset: DataPayload, chart_style: ChartStyle | None
+    ) -> tuple[bool, str]:
+        if chart_style is None:
+            return True, ""
+        try:
+            visualization = chart_style.visualization()
+        except Exception:
+            return False, f"unsupported chart_style '{chart_style.name}'"
+        if isinstance(dataset, TableDataset):
+            return False, f"table data cannot use chart_style '{chart_style.name}'"
+        if isinstance(dataset, RangeDataset):
+            if visualization != VisualizationType.RANGE:
+                return False, f"range data requires chart_style 'ranges' (got '{chart_style.name}')"
+            return True, ""
+        if isinstance(dataset, Dataset):
+            if visualization == VisualizationType.RANGE:
+                return False, "series data cannot use chart_style 'ranges'"
+            return True, ""
+        return True, ""
 
     def _apply_preferred_selection(self, session: CardSession, preferred: Dict[str, str]) -> None:
         selection = {

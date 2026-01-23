@@ -19,6 +19,17 @@ def test_load_json_dataset(tmp_path: Path) -> None:
     assert list(dataset.y) == [0.1, 0.2, 0.3]
 
 
+def test_series_accepts_missing_y_axis(tmp_path: Path) -> None:
+    series_path = tmp_path / "events.json"
+    series_path.write_text("{\"data\": {\"x_axis\": [1, 2, 3]}}")
+    repo = DatasetRepository()
+
+    dataset = repo.load(series_path)
+
+    assert list(dataset.x) == [1.0, 2.0, 3.0]
+    assert list(dataset.y) == [1.0, 1.0, 1.0]
+
+
 def test_list_datasets_filters_supported_extensions(tmp_path: Path) -> None:
     repo = DatasetRepository()
     (tmp_path / "a.json").write_text("{\"data\": {\"x_axis\":[0], \"y_axis\":[1]}}")

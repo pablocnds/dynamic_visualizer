@@ -1,4 +1,4 @@
-# Event line example: marks positions along X with intensity taken from the Y values.
+# Event line example: marks positions along X; Y values are ignored.
 
 [global]
 pivot_chart = "{{CLASS}}"

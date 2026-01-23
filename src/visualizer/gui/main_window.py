@@ -46,6 +46,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._variable_controls: dict[str, QtWidgets.QComboBox] = {}
         self._active_card_path: Optional[Path] = None
         self._panel_overrides: Dict[str, VisualizationType | None] = {}
+        self._panel_axis_visibility: Dict[str, tuple[bool | None, bool | None]] = {}
         self._added_files: set[Path] = set()
         self._pending_card_file: Optional[Path] = None
         self._last_variable_values: Dict[str, str] = {}
@@ -356,6 +357,14 @@ class MainWindow(QtWidgets.QMainWindow):
             pass
         return raw
 
+    def _reset_data_state(self) -> None:
+        self._file_list.clear()
+        self._added_files.clear()
+        self._current_dataset = None
+        self._current_path = None
+        self._pending_data_file = None
+        self._update_loaded_files([])
+
     def _add_file_to_list(self, path: Path) -> None:
         for index in range(self._file_list.count()):
             existing_item = self._file_list.item(index)
@@ -407,6 +416,8 @@ class MainWindow(QtWidgets.QMainWindow):
         if dialog.exec():
             folders = dialog.selectedFiles()
             if folders:
+                self._clear_card_selection()
+                self._reset_data_state()
                 self._data_dir = Path(folders[0])
                 self._refresh_file_list()
                 self._sidebar_mode = "data"
@@ -422,6 +433,8 @@ class MainWindow(QtWidgets.QMainWindow):
         if dialog.exec():
             files = dialog.selectedFiles()
             if files:
+                self._reset_data_state()
+                self._data_dir = None
                 card_path = Path(files[0])
                 self._set_card_loader(card_path.parent, select_card=card_path)
                 self._update_sidebar_mode()
@@ -505,6 +518,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self._card_session = session
             self._active_card_path = card_path
             self._panel_overrides.clear()
+            self._panel_axis_visibility.clear()
             self._update_navigation_buttons()
             self._populate_variable_controls()
             self._render_current_card_selection()
@@ -571,6 +585,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._variable_group.setVisible(False)
         self._clear_variable_controls()
         self._panel_overrides.clear()
+        self._panel_axis_visibility.clear()
         self._panel_manager.clear(self._multi_plot_layout)
         self._plot_stack.setCurrentWidget(self._single_plot_widget)
         self._active_card_path = None
@@ -786,6 +801,8 @@ class MainWindow(QtWidgets.QMainWindow):
         plot = self._panel_manager.plot_by_name(subcard_name)
         table = self._panel_manager.table_by_name(subcard_name)
         data = self._panel_manager.latest_panel_data().get(subcard_name)
+        axis_visibility = self._panel_axis_visibility.get(subcard_name, (None, None))
+        show_x_axis, show_y_axis = axis_visibility
         if table:
             self._render_table_panel(table, data or [])
             return
@@ -793,6 +810,7 @@ class MainWindow(QtWidgets.QMainWindow):
             return
         if not data:
             self._renderer.reset_widget(plot)
+            self._renderer.apply_axis_visibility(plot, show_x_axis, show_y_axis)
             return
         self._renderer.reset_widget(plot)
         override = self._panel_overrides.get(subcard_name)
@@ -815,14 +833,17 @@ class MainWindow(QtWidgets.QMainWindow):
             )
         if not specs:
             plot.clear()
+            self._renderer.apply_axis_visibility(plot, show_x_axis, show_y_axis)
         elif len(specs) == 1:
-            self._renderer.render(plot, specs[0])
+            self._renderer.render(plot, specs[0], show_x_axis=show_x_axis, show_y_axis=show_y_axis)
         else:
             try:
-                self._renderer.render_multiple(plot, specs)
+                self._renderer.render_multiple(
+                    plot, specs, show_x_axis=show_x_axis, show_y_axis=show_y_axis
+                )
             except ValueError as exc:
                 # Incompatible overlay (e.g., mixing 1D and 2D plots); render first spec and surface message.
-                self._renderer.render(plot, specs[0])
+                self._renderer.render(plot, specs[0], show_x_axis=show_x_axis, show_y_axis=show_y_axis)
                 self._set_status_message(str(exc))
 
     def _render_table_panel(
@@ -970,7 +991,7 @@ class MainWindow(QtWidgets.QMainWindow):
         if not session:
             return
         try:
-            plans, missing = self._controller.build_panel_plans()
+            plans, missing, incompatible = self._controller.build_panel_plans()
         except Exception as exc:  # pragma: no cover - GUI feedback
             self._set_status_message(f"Card error: {exc}")
             self._show_error_dialog("Card error", str(exc))
@@ -986,6 +1007,9 @@ class MainWindow(QtWidgets.QMainWindow):
         for name in list(self._panel_overrides.keys()):
             if name not in active_names:
                 self._panel_overrides.pop(name, None)
+        for name in list(self._panel_axis_visibility.keys()):
+            if name not in active_names:
+                self._panel_axis_visibility.pop(name, None)
 
         panel_warnings: List[str] = []
         panels: List[
@@ -1004,10 +1028,17 @@ class MainWindow(QtWidgets.QMainWindow):
             panel_kind, panel_warning = self._infer_panel_kind(plan.subcard.name, entries)
             if panel_warning:
                 panel_warnings.append(panel_warning)
+            self._panel_axis_visibility[plan.subcard.name] = self._resolve_axis_visibility(
+                plan.subcard, panel_kind
+            )
             panels.append((plan.subcard, entries, plan.paths, panel_kind))
 
         panel_names = [plan.subcard.name for plan in plans]
-        if panel_names != self._panel_order:
+        kind_mismatch = any(
+            panel_kind != self._panel_manager.panel_kind_by_name(subcard.name)
+            for subcard, _entries, _paths, panel_kind in panels
+        )
+        if panel_names != self._panel_order or kind_mismatch:
             warning = self._build_panel_layout(panels)
         else:
             warning = self._update_existing_panels(panels)
@@ -1020,6 +1051,8 @@ class MainWindow(QtWidgets.QMainWindow):
             warning_bits.extend(panel_warnings)
         if missing:
             warning_bits.append(f"missing: {', '.join(missing)}")
+        if incompatible:
+            warning_bits.append(f"incompatible: {', '.join(incompatible)}")
         if warning_bits:
             self._set_status_message("; ".join(warning_bits))
         else:
@@ -1049,6 +1082,29 @@ class MainWindow(QtWidgets.QMainWindow):
         if has_table and len(datasets) > 1:
             return "table", f"{name}: table overlays not supported; showing first dataset only"
         return ("table" if has_table else "plot"), None
+
+    def _resolve_axis_visibility(
+        self, subcard: SubcardDefinition, panel_kind: str
+    ) -> tuple[bool | None, bool | None]:
+        session = self._controller.card_session
+        if not session or panel_kind == "table":
+            return None, None
+        card_def = session.definition
+        show_x = (
+            subcard.show_x_axis
+            if subcard.show_x_axis is not None
+            else card_def.show_x_axis
+        )
+        show_y = (
+            subcard.show_y_axis
+            if subcard.show_y_axis is not None
+            else card_def.show_y_axis
+        )
+        if show_x is None:
+            show_x = False if card_def.synchronize_axis else True
+        if show_y is None:
+            show_y = True
+        return show_x, show_y
 
     def _update_last_variable_values(self, session: CardSession) -> None:
         for var, value in session.selection.items():

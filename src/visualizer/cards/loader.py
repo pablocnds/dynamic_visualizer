@@ -45,6 +45,8 @@ class CardLoader:
         chart_style = _maybe_first_style(chart_style_raw)
         pivot = data.get("pivot_chart") or global_section.get("pivot_chart")
         synchronize_axis = bool(global_section.get("synchronize_axis", False))
+        show_x_axis = _parse_optional_bool(data.get("show_x_axis") or global_section.get("show_x_axis"))
+        show_y_axis = _parse_optional_bool(data.get("show_y_axis") or global_section.get("show_y_axis"))
         subcards_section = data.get("subcards") or {}
 
         subcards: List[SubcardDefinition] = []
@@ -99,6 +101,8 @@ class CardLoader:
                         chart_height=_parse_chart_height(config.get("chart_height")),
                         filepaths=filepaths,
                         overlay_variable=overlay_var,
+                        show_x_axis=_parse_optional_bool(config.get("show_x_axis")),
+                        show_y_axis=_parse_optional_bool(config.get("show_y_axis")),
                     )
                 )
         elif filepath_template:
@@ -131,6 +135,8 @@ class CardLoader:
                         chart_style=_maybe_first_style(chart_style),
                         filepaths=filepaths,
                         overlay_variable=overlay_var,
+                        show_x_axis=show_x_axis,
+                        show_y_axis=show_y_axis,
                     )
                 )
             else:
@@ -143,6 +149,8 @@ class CardLoader:
                         chart_style=_maybe_first_style(chart_style),
                         filepaths=[template],
                         overlay_variable=None,
+                        show_x_axis=show_x_axis,
+                        show_y_axis=show_y_axis,
                     )
                 )
         elif not filepath_template:
@@ -168,6 +176,8 @@ class CardLoader:
             overlay_panels=overlay_panels,
             variable_filters=variable_filters,
             synchronize_axis=synchronize_axis,
+            show_x_axis=show_x_axis,
+            show_y_axis=show_y_axis,
         )
 
     def resolve_paths(self, definition: CardDefinition) -> Dict[str, List[CardMatch]]:
@@ -219,6 +229,10 @@ class CardLoader:
                     raise ValueError(
                         f"Subcard '{subcard.name}' wildcard matched multiple files for variables {duplicates[0]}"
                     )
+            if uses_wildcard and not subcard.variables and len(matches) > 1:
+                raise ValueError(
+                    f"Subcard '{subcard.name}' wildcard matched multiple files; refine the pattern or add a variable."
+                )
             resolved[subcard.name] = matches
         return resolved
 
@@ -252,6 +266,19 @@ def _parse_chart_height(value: object | None) -> Optional[float]:
     if height <= 0:
         return None
     return min(height, 100.0)
+
+
+def _parse_optional_bool(value: object | None) -> Optional[bool]:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return value
+    text = str(value).strip().lower()
+    if text in {"true", "yes", "1", "on"}:
+        return True
+    if text in {"false", "no", "0", "off"}:
+        return False
+    raise ValueError(f"Invalid boolean value: {value}")
 
 
 def _ensure_string(value: object) -> str:

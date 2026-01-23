@@ -13,6 +13,108 @@ _EVENT_BAR_WIDTH_PX = 2.0
 _BACKGROUND_ALPHA = 90
 
 
+class _TopAxisOverlay:
+    def __init__(self, widget: pg.PlotWidget) -> None:
+        self._widget = widget
+        self._plot_item = widget.getPlotItem()
+        self._view_box = self._plot_item.getViewBox()
+        self._axis_helper = pg.AxisItem(orientation="top")
+        self._items: list[pg.QtWidgets.QGraphicsItem] = []
+        self._pen = pg.mkPen(color=(20, 20, 20, 160), width=1)
+        self._outline_pen = pg.mkPen(color=(255, 255, 255, 160), width=3)
+        self._text_color = pg.mkColor(20, 20, 20, 200)
+        self._text_shadow_color = pg.mkColor(255, 255, 255, 160)
+        self._font = pg.QtGui.QFont()
+        self._font.setPointSize(9)
+        self._tick_length = 6
+        self._padding = 2
+        self._label_padding = 2
+        self._z_value = 50
+
+    def clear(self) -> None:
+        for item in self._items:
+            try:
+                if item.scene():
+                    item.scene().removeItem(item)
+            except Exception:
+                pass
+        self._items.clear()
+
+    def set_colors(self, foreground: pg.QtGui.QColor, outline: pg.QtGui.QColor) -> None:
+        fg = pg.mkColor(foreground)
+        outline_color = pg.mkColor(outline)
+        self._pen = pg.mkPen(fg, width=1)
+        self._outline_pen = pg.mkPen(outline_color, width=3)
+        self._text_color = pg.mkColor(fg)
+        shadow = pg.mkColor(outline_color)
+        shadow.setAlpha(min(180, shadow.alpha() + 20))
+        self._text_shadow_color = shadow
+
+    def update(self) -> None:
+        self.clear()
+        scene = self._plot_item.scene()
+        if scene is None:
+            return
+        rect = self._view_box.sceneBoundingRect()
+        if rect.width() <= 0 or rect.height() <= 0:
+            return
+        (x_min, x_max), _ = self._view_box.viewRange()
+        if not np.isfinite(x_min) or not np.isfinite(x_max) or x_min == x_max:
+            return
+        tick_levels = self._axis_helper.tickValues(x_min, x_max, rect.width())
+        if not tick_levels:
+            return
+        spacing, ticks = tick_levels[0]
+        if not ticks:
+            return
+        labels = self._axis_helper.tickStrings(ticks, scale=1.0, spacing=spacing)
+        y_top = rect.top() + self._padding
+        tick_end = y_top + self._tick_length
+
+        baseline_outline = pg.QtWidgets.QGraphicsLineItem(rect.left(), y_top, rect.right(), y_top)
+        baseline_outline.setPen(self._outline_pen)
+        baseline_outline.setZValue(self._z_value)
+        scene.addItem(baseline_outline)
+        self._items.append(baseline_outline)
+        baseline = pg.QtWidgets.QGraphicsLineItem(rect.left(), y_top, rect.right(), y_top)
+        baseline.setPen(self._pen)
+        baseline.setZValue(self._z_value)
+        scene.addItem(baseline)
+        self._items.append(baseline)
+
+        for tick, label in zip(ticks, labels):
+            if not label:
+                continue
+            scene_point = self._view_box.mapViewToScene(pg.Point(tick, 0))
+            x_scene = scene_point.x()
+            if x_scene < rect.left() - 1 or x_scene > rect.right() + 1:
+                continue
+            line_outline = pg.QtWidgets.QGraphicsLineItem(x_scene, y_top, x_scene, tick_end)
+            line_outline.setPen(self._outline_pen)
+            line_outline.setZValue(self._z_value)
+            scene.addItem(line_outline)
+            line = pg.QtWidgets.QGraphicsLineItem(x_scene, y_top, x_scene, tick_end)
+            line.setPen(self._pen)
+            line.setZValue(self._z_value)
+            scene.addItem(line)
+            text = pg.TextItem(label, color=self._text_color, anchor=(0, 0))
+            text.setFont(self._font)
+            text_rect = text.boundingRect()
+            text_x = x_scene - (text_rect.width() / 2.0)
+            text_y = tick_end + self._label_padding
+
+            shadow = pg.TextItem(label, color=self._text_shadow_color, anchor=(0, 0))
+            shadow.setFont(self._font)
+            shadow.setPos(text_x + 1, text_y + 1)
+            shadow.setZValue(self._z_value - 1)
+            scene.addItem(shadow)
+
+            text.setPos(text_x, text_y)
+            text.setZValue(self._z_value)
+            scene.addItem(text)
+            self._items.extend([line_outline, line, shadow, text])
+
+
 class PlotRenderer:
     """Renders PlotSpec objects onto a PyQtGraph widget."""
 
@@ -20,10 +122,19 @@ class PlotRenderer:
         pg.setConfigOption("background", "w")
         pg.setConfigOption("foreground", "k")
         self._colorbars: dict[int, list[pg.ColorBarItem]] = {}
+        self._axis_overlays: dict[int, _TopAxisOverlay] = {}
 
-    def render(self, widget: pg.PlotWidget, spec: PlotSpec) -> None:
+    def render(
+        self,
+        widget: pg.PlotWidget,
+        spec: PlotSpec,
+        show_x_axis: bool | None = None,
+        show_y_axis: bool | None = None,
+    ) -> None:
+        self._clear_viewbox_handlers(widget)
         self._clear_legend(widget)
         self._clear_colorbar(widget)
+        self._clear_axis_overlay(widget)
         widget.clear()
         plot_item = widget.getPlotItem()
         plot_item.showAxis("left")
@@ -47,32 +158,54 @@ class PlotRenderer:
                 symbolSize=6,
             )
         elif spec.visualization == VisualizationType.EVENTLINE:
-            self._render_eventline(widget, spec)
+            self._render_eventline(widget, spec, show_axis=show_x_axis)
             return
         elif spec.visualization == VisualizationType.RANGE:
-            self._render_range(widget, spec)
+            self._render_range(widget, spec, show_axis=show_x_axis)
             return
         elif spec.visualization == VisualizationType.COLORMAP:
-            self._render_colormap(widget, spec)
+            self._render_colormap(widget, spec, show_axis=show_x_axis)
             return
         widget.setLabel("bottom", spec.x_label or "X Axis")
         widget.setLabel("left", spec.y_label or "Y Axis")
         widget.showGrid(x=True, y=True, alpha=0.2)
+        self._apply_axis_visibility(
+            plot_item,
+            show_x_axis,
+            show_y_axis,
+            spec.x_label or "X Axis",
+            spec.y_label or "Y Axis",
+        )
         # Single-spec legend is optional; only add when multiple
 
-    def render_multiple(self, widget: pg.PlotWidget, specs: Iterable[PlotSpec]) -> None:
+    def render_multiple(
+        self,
+        widget: pg.PlotWidget,
+        specs: Iterable[PlotSpec],
+        show_x_axis: bool | None = None,
+        show_y_axis: bool | None = None,
+    ) -> None:
         specs = list(specs)
+        self._clear_viewbox_handlers(widget)
         if not specs:
             widget.clear()
             return
         self._clear_colorbar(widget)
+        self._clear_axis_overlay(widget)
         one_dim_specs = [spec for spec in specs if self._is_one_dimensional(spec)]
         two_dim_specs = [spec for spec in specs if not self._is_one_dimensional(spec)]
         if len(specs) > 1 and one_dim_specs and not two_dim_specs:
-            self._render_one_dimensional_overlay(widget, specs)
+            self._render_one_dimensional_overlay(widget, specs, show_axis=show_x_axis)
             return
         if one_dim_specs and two_dim_specs:
-            self._render_mixed_overlay(widget, one_dim_specs, two_dim_specs)
+            self._clear_axis_overlay(widget)
+            self._render_mixed_overlay(
+                widget,
+                one_dim_specs,
+                two_dim_specs,
+                show_x_axis=show_x_axis,
+                show_y_axis=show_y_axis,
+            )
             return
         self._clear_legend(widget)
         widget.clear()
@@ -108,6 +241,13 @@ class PlotRenderer:
         widget.setLabel("bottom", first.x_label or "X Axis")
         widget.setLabel("left", first.y_label or "Y Axis")
         widget.showGrid(x=True, y=True, alpha=0.2)
+        self._apply_axis_visibility(
+            widget.getPlotItem(),
+            show_x_axis,
+            show_y_axis,
+            first.x_label or "X Axis",
+            first.y_label or "Y Axis",
+        )
 
     def _clear_legend(self, widget: pg.PlotWidget) -> None:
         legend = getattr(widget, "legend", None)
@@ -119,19 +259,28 @@ class PlotRenderer:
     def reset_widget(self, widget: pg.PlotWidget) -> None:
         self._clear_legend(widget)
         self._clear_colorbar(widget)
+        self._clear_viewbox_handlers(widget)
+        self._clear_axis_overlay(widget)
         widget.clear()
         try:
             widget.enableAutoRange(x=True, y=True)
         except Exception:
             pass
 
+    def apply_axis_visibility(
+        self, widget: pg.PlotWidget, show_x_axis: bool | None, show_y_axis: bool | None
+    ) -> None:
+        plot_item = widget.getPlotItem()
+        self._apply_axis_visibility(plot_item, show_x_axis, show_y_axis, None, None)
+
     def clear_colorbars(self, widget: pg.PlotWidget) -> None:
         self._clear_colorbar(widget)
 
-    def _render_colormap(self, widget: pg.PlotWidget, spec: PlotSpec) -> None:
+    def _render_colormap(self, widget: pg.PlotWidget, spec: PlotSpec, show_axis: bool | None) -> None:
         widget.clear()
         self._clear_legend(widget)
         self._clear_colorbar(widget)
+        self._clear_axis_overlay(widget)
         plot_item = widget.getPlotItem()
         self._style_1d_plot(plot_item)
         values = self._coerce_array(spec.y)
@@ -158,11 +307,15 @@ class PlotRenderer:
         widget.setLabel("left", None)
         widget.setYRange(0, 1, padding=0)
         widget.showGrid(x=False, y=False)
+        if show_axis is not False:
+            axis_colors = self._axis_colors_for_base_colors([self._color_from_cmap(cmap, 0.5)])
+            self._ensure_top_axis_overlay(widget, axis_colors)
 
-    def _render_eventline(self, widget: pg.PlotWidget, spec: PlotSpec) -> None:
+    def _render_eventline(self, widget: pg.PlotWidget, spec: PlotSpec, show_axis: bool | None) -> None:
         widget.clear()
         self._clear_legend(widget)
         self._clear_colorbar(widget)
+        self._clear_axis_overlay(widget)
         plot_item = widget.getPlotItem()
         self._style_1d_plot(plot_item)
 
@@ -193,11 +346,15 @@ class PlotRenderer:
         widget.setLabel("bottom", None)
         widget.setYRange(0, 1, padding=0)
         widget.showGrid(x=False, y=False)
+        if show_axis is not False:
+            axis_colors = self._axis_colors_for_base_colors([pg.mkColor(0, 0, 0)])
+            self._ensure_top_axis_overlay(widget, axis_colors)
 
-    def _render_range(self, widget: pg.PlotWidget, spec: PlotSpec) -> None:
+    def _render_range(self, widget: pg.PlotWidget, spec: PlotSpec, show_axis: bool | None) -> None:
         widget.clear()
         self._clear_legend(widget)
         self._clear_colorbar(widget)
+        self._clear_axis_overlay(widget)
         plot_item = widget.getPlotItem()
         self._style_1d_plot(plot_item)
 
@@ -214,6 +371,9 @@ class PlotRenderer:
         widget.setLabel("bottom", None)
         widget.setYRange(0, 1, padding=0)
         widget.showGrid(x=False, y=False)
+        if show_axis is not False:
+            axis_colors = self._axis_colors_for_base_colors(colors)
+            self._ensure_top_axis_overlay(widget, axis_colors)
 
     def _clear_colorbar(self, widget: pg.PlotWidget) -> None:
         colorbars = self._colorbars.pop(id(widget), [])
@@ -229,6 +389,37 @@ class PlotRenderer:
             for item in list(scene.items()):
                 if isinstance(item, pg.ColorBarItem):
                     scene.removeItem(item)
+        except Exception:
+            pass
+
+    def _clear_axis_overlay(self, widget: pg.PlotWidget) -> None:
+        overlay = self._axis_overlays.pop(id(widget), None)
+        if overlay:
+            overlay.clear()
+
+    def _ensure_top_axis_overlay(
+        self, widget: pg.PlotWidget, axis_colors: tuple[pg.QtGui.QColor, pg.QtGui.QColor]
+    ) -> None:
+        overlay = self._axis_overlays.get(id(widget))
+        if overlay is None:
+            overlay = _TopAxisOverlay(widget)
+            self._axis_overlays[id(widget)] = overlay
+        overlay.set_colors(*axis_colors)
+        overlay.update()
+
+        view_box = widget.getPlotItem().getViewBox()
+
+        def _on_view_changed(*_args, _overlay=overlay) -> None:
+            _overlay.update()
+
+        try:
+            view_box.sigRangeChanged.connect(_on_view_changed)
+            self._register_viewbox_handler(view_box, _on_view_changed)
+        except Exception:
+            pass
+        try:
+            view_box.sigResized.connect(_on_view_changed)
+            self._register_viewbox_handler(view_box, _on_view_changed, signal="resize")
         except Exception:
             pass
 
@@ -355,13 +546,21 @@ class PlotRenderer:
 
     def _style_1d_plot(self, plot_item: pg.PlotItem) -> None:
         plot_item.hideAxis("left")
-        plot_item.getAxis("left").setStyle(showValues=False)
+        left_axis = plot_item.getAxis("left")
+        left_axis.setStyle(showValues=False)
+        try:
+            left_axis.setWidth(0)
+            left_axis.setTicks([])
+        except Exception:
+            pass
         plot_item.hideAxis("bottom")
         axis = plot_item.getAxis("bottom")
         try:
             axis.setStyle(showValues=False, tickLength=0)
             axis.setPen(None)
             axis.setTextPen(None)
+            axis.setHeight(0)
+            axis.setTicks([])
         except Exception:
             pass
         plot_item.showGrid(x=False, y=False)
@@ -430,6 +629,7 @@ class PlotRenderer:
 
         try:
             vb.sigRangeChanged.connect(_on_range_changed)
+            self._register_viewbox_handler(vb, _on_range_changed)
         except Exception:
             pass
 
@@ -444,26 +644,37 @@ class PlotRenderer:
         span = x_max - x_min if x_max != x_min else 1.0
         return max(span * 0.001, span / 1000.0)
 
-    def _render_one_dimensional_overlay(self, widget: pg.PlotWidget, specs: list[PlotSpec]) -> None:
+    def _render_one_dimensional_overlay(
+        self, widget: pg.PlotWidget, specs: list[PlotSpec], show_axis: bool | None
+    ) -> None:
         self._clear_legend(widget)
         self._clear_colorbar(widget)
+        self._clear_axis_overlay(widget)
         widget.clear()
         plot_item = widget.getPlotItem()
         self._style_1d_plot(plot_item)
         cmap_names = ["viridis", "plasma", "cividis", "magma", "turbo"]
+        base_colors: list[pg.QtGui.QColor] = []
 
         for idx, spec in enumerate(specs):
             cmap = pg.colormap.get(cmap_names[idx % len(cmap_names)])
             if spec.visualization == VisualizationType.COLORMAP:
                 self._render_colormap_with(widget, spec, cmap)
+                base_colors.append(self._color_from_cmap(cmap, 0.5))
             elif spec.visualization == VisualizationType.EVENTLINE:
                 self._render_eventline_with(widget, spec, cmap)
+                base_colors.append(self._color_from_cmap(cmap, 0.8))
             elif spec.visualization == VisualizationType.RANGE:
-                self._render_range_with(widget, spec)
+                colors = self._render_range_with(widget, spec)
+                if colors:
+                    base_colors.extend(colors)
 
         widget.setLabel("bottom", None)
         widget.setYRange(0, 1, padding=0)
         widget.showGrid(x=False, y=False)
+        if show_axis is not False:
+            axis_colors = self._axis_colors_for_base_colors(base_colors)
+            self._ensure_top_axis_overlay(widget, axis_colors)
 
     def _render_colormap_with(self, widget: pg.PlotWidget, spec: PlotSpec, cmap: pg.ColorMap) -> None:
         values = self._coerce_array(spec.y)
@@ -485,48 +696,48 @@ class PlotRenderer:
 
     def _render_eventline_with(self, widget: pg.PlotWidget, spec: PlotSpec, cmap: pg.ColorMap) -> None:
         x_numeric = self._coerce_array(spec.x, fallback_range=True)
-        intensities = self._coerce_array(spec.y)
-        if intensities.shape[0] != x_numeric.shape[0]:
-            intensities = np.ones_like(x_numeric, dtype=float)
-
         if x_numeric.size == 0:
             return
 
-        x_numeric, intensities = self._bin_events(x_numeric, intensities, _MAX_EVENT_BINS)
+        x_numeric = self._coerce_eventline_x(x_numeric, _MAX_EVENT_BINS)
         if x_numeric.size == 0:
             return
 
         x_min = float(np.nanmin(x_numeric))
         x_max = float(np.nanmax(x_numeric))
 
-        lut = cmap.getLookupTable(nPts=512, alpha=False)
-        levels = (float(np.nanmin(intensities)), float(np.nanmax(intensities)))
-        if levels[0] == levels[1]:
-            levels = (levels[0], levels[0] + 1e-9)
-        scale = (intensities - levels[0]) / (levels[1] - levels[0])
-        idx = np.clip((scale * (len(lut) - 1)).astype(int), 0, len(lut) - 1)
-        colors = [pg.mkColor(lut[i]) for i in idx]
-
-        bars = pg.BarGraphItem(x=x_numeric, height=np.ones_like(x_numeric), width=1.0, brushes=colors, pens=colors)
+        color = self._eventline_color(cmap, alpha=180)
+        colors = [color] * len(x_numeric)
+        bars = pg.BarGraphItem(
+            x=x_numeric,
+            height=np.ones_like(x_numeric),
+            width=1.0,
+            brushes=colors,
+            pens=colors,
+        )
         widget.addItem(bars)
         self._set_event_bar_width(widget, bars, x_min, x_max)
 
-    def _render_range_with(self, widget: pg.PlotWidget, spec: PlotSpec) -> None:
+    def _render_range_with(self, widget: pg.PlotWidget, spec: PlotSpec) -> list[pg.QtGui.QColor]:
         ranges = list(spec.ranges or [])
         if not ranges:
-            return
+            return []
         alpha = self._resolve_alpha(spec.style_params, fallback=120)
         colors = self._resolve_range_colors(len(ranges), spec.style_params, alpha)
         plot_item = widget.getPlotItem()
         self._add_range_regions(plot_item, ranges, colors, z_value=0)
+        return colors
 
     def _render_mixed_overlay(
         self,
         widget: pg.PlotWidget,
         one_dim_specs: list[PlotSpec],
         two_dim_specs: list[PlotSpec],
+        show_x_axis: bool | None,
+        show_y_axis: bool | None,
     ) -> None:
         self._clear_legend(widget)
+        self._clear_axis_overlay(widget)
         widget.clear()
         plot_item = widget.getPlotItem()
         legend = widget.addLegend()
@@ -566,6 +777,13 @@ class PlotRenderer:
         widget.setLabel("bottom", first.x_label or "X Axis")
         widget.setLabel("left", first.y_label or "Y Axis")
         widget.showGrid(x=True, y=True, alpha=0.2)
+        self._apply_axis_visibility(
+            plot_item,
+            show_x_axis,
+            show_y_axis,
+            first.x_label or "X Axis",
+            first.y_label or "Y Axis",
+        )
 
     def _render_one_dimensional_background(
         self,
@@ -628,28 +846,18 @@ class PlotRenderer:
         y_max: float,
     ) -> None:
         x_numeric = self._coerce_array(spec.x, fallback_range=True)
-        intensities = self._coerce_array(spec.y)
-        if intensities.shape[0] != x_numeric.shape[0]:
-            intensities = np.ones_like(x_numeric, dtype=float)
-
         if x_numeric.size == 0:
             return
 
-        x_numeric, intensities = self._bin_events(x_numeric, intensities, _MAX_EVENT_BINS)
+        x_numeric = self._coerce_eventline_x(x_numeric, _MAX_EVENT_BINS)
         if x_numeric.size == 0:
             return
 
         x_min = float(np.nanmin(x_numeric))
         x_max = float(np.nanmax(x_numeric))
         cmap = pg.colormap.get("viridis")
-        lut = cmap.getLookupTable(nPts=512, alpha=True).copy()
-        lut[:, 3] = _BACKGROUND_ALPHA
-        levels = (float(np.nanmin(intensities)), float(np.nanmax(intensities)))
-        if levels[0] == levels[1]:
-            levels = (levels[0], levels[0] + 1e-9)
-        scale = (intensities - levels[0]) / (levels[1] - levels[0])
-        idx = np.clip((scale * (len(lut) - 1)).astype(int), 0, len(lut) - 1)
-        colors = [pg.mkColor(lut[i]) for i in idx]
+        color = self._eventline_color(cmap, alpha=_BACKGROUND_ALPHA)
+        colors = [color] * len(x_numeric)
         y_span = y_max - y_min if y_max != y_min else 1.0
 
         bars = pg.BarGraphItem(
@@ -665,6 +873,12 @@ class PlotRenderer:
         self._set_event_bar_width(widget, bars, x_min, x_max)
         self._bind_bars_to_view_range(plot_item.getViewBox(), bars)
 
+    def _eventline_color(self, cmap: pg.ColorMap, alpha: int) -> pg.QtGui.QColor:
+        lut = cmap.getLookupTable(nPts=2, alpha=True)
+        color = pg.mkColor(lut[-1])
+        color.setAlpha(alpha)
+        return color
+
     def _bind_image_to_view_range(
         self,
         view_box: pg.ViewBox,
@@ -679,6 +893,7 @@ class PlotRenderer:
 
         try:
             view_box.sigRangeChanged.connect(_on_range_changed)
+            self._register_viewbox_handler(view_box, _on_range_changed)
         except Exception:
             pass
 
@@ -693,6 +908,134 @@ class PlotRenderer:
 
         try:
             view_box.sigRangeChanged.connect(_on_range_changed)
+            self._register_viewbox_handler(view_box, _on_range_changed)
+        except Exception:
+            pass
+
+    def _clear_viewbox_handlers(self, widget: pg.PlotWidget) -> None:
+        try:
+            view_box = widget.getPlotItem().getViewBox()
+        except Exception:
+            return
+        handlers = getattr(view_box, "_range_handlers", None)
+        if not handlers:
+            return
+        for entry in list(handlers):
+            if isinstance(entry, tuple) and len(entry) == 2:
+                signal_name, handler = entry
+            else:
+                signal_name, handler = "range", entry
+            try:
+                if signal_name == "resize":
+                    view_box.sigResized.disconnect(handler)
+                else:
+                    view_box.sigRangeChanged.disconnect(handler)
+            except Exception:
+                continue
+        view_box._range_handlers = []  # type: ignore[attr-defined]
+
+    @staticmethod
+    def _register_viewbox_handler(view_box: pg.ViewBox, handler, signal: str = "range") -> None:
+        handlers = getattr(view_box, "_range_handlers", None)
+        if handlers is None:
+            handlers = []
+            view_box._range_handlers = handlers  # type: ignore[attr-defined]
+        handlers.append((signal, handler))
+
+    @staticmethod
+    def _color_from_cmap(cmap: pg.ColorMap, position: float) -> pg.QtGui.QColor:
+        position = max(0.0, min(1.0, float(position)))
+        lut = cmap.getLookupTable(nPts=256, alpha=True)
+        idx = int(position * (len(lut) - 1))
+        return pg.mkColor(lut[idx])
+
+    @staticmethod
+    def _average_colors(colors: list[pg.QtGui.QColor]) -> pg.QtGui.QColor:
+        if not colors:
+            return pg.mkColor(255, 255, 255, 255)
+        total_r = total_g = total_b = total_a = 0.0
+        for color in colors:
+            c = pg.mkColor(color)
+            total_r += c.red()
+            total_g += c.green()
+            total_b += c.blue()
+            total_a += c.alpha()
+        count = float(len(colors))
+        return pg.mkColor(
+            int(total_r / count),
+            int(total_g / count),
+            int(total_b / count),
+            int(total_a / count) if total_a else 255,
+        )
+
+    def _axis_colors_for_base_colors(
+        self, base_colors: list[pg.QtGui.QColor]
+    ) -> tuple[pg.QtGui.QColor, pg.QtGui.QColor]:
+        background = self._average_colors(base_colors)
+        return self._contrast_axis_colors(background)
+
+    @staticmethod
+    def _contrast_axis_colors(
+        background: pg.QtGui.QColor,
+    ) -> tuple[pg.QtGui.QColor, pg.QtGui.QColor]:
+        bg = pg.mkColor(background)
+        luminance = 0.299 * bg.red() + 0.587 * bg.green() + 0.114 * bg.blue()
+        if luminance < 140:
+            foreground = pg.mkColor(245, 245, 245, 200)
+            outline = pg.mkColor(10, 10, 10, 160)
+        else:
+            foreground = pg.mkColor(20, 20, 20, 200)
+            outline = pg.mkColor(255, 255, 255, 160)
+        return foreground, outline
+
+    def _apply_axis_visibility(
+        self,
+        plot_item: pg.PlotItem,
+        show_x_axis: bool | None,
+        show_y_axis: bool | None,
+        x_label: str | None,
+        y_label: str | None,
+    ) -> None:
+        if show_x_axis is not None:
+            self._set_axis_visible(plot_item, "bottom", show_x_axis)
+            if not show_x_axis:
+                plot_item.setLabel("bottom", None)
+            elif x_label is not None:
+                plot_item.setLabel("bottom", x_label)
+        if show_y_axis is not None:
+            self._set_axis_visible(plot_item, "left", show_y_axis)
+            if not show_y_axis:
+                plot_item.setLabel("left", None)
+            elif y_label is not None:
+                plot_item.setLabel("left", y_label)
+
+    @staticmethod
+    def _set_axis_visible(plot_item: pg.PlotItem, axis_name: str, visible: bool) -> None:
+        axis = plot_item.getAxis(axis_name)
+        if visible:
+            plot_item.showAxis(axis_name, show=True)
+            try:
+                axis.setStyle(showValues=True)
+                axis.setPen(axis.textPen())
+                axis.setTextPen(axis.textPen())
+                axis.setTicks(None)
+                if axis_name == "bottom":
+                    axis.setHeight(None)
+                elif axis_name == "left":
+                    axis.setWidth(None)
+            except Exception:
+                pass
+            return
+        plot_item.showAxis(axis_name, show=False)
+        try:
+            axis.setStyle(showValues=False, tickLength=0)
+            axis.setPen(None)
+            axis.setTextPen(None)
+            axis.setTicks([])
+            if axis_name == "bottom":
+                axis.setHeight(0)
+            elif axis_name == "left":
+                axis.setWidth(0)
         except Exception:
             pass
 

@@ -118,6 +118,23 @@ filepath = "<CARD_DIR>/../data/complex_study/{{DATASET}}/{{CLASS}}/time_series.j
         loader.load_definition(card_path)
 
 
+def test_wildcard_only_cards_require_single_match(tmp_path: Path) -> None:
+    cards_dir = tmp_path / "cards"
+    data_dir = tmp_path / "data"
+    cards_dir.mkdir(parents=True, exist_ok=True)
+    data_dir.mkdir(parents=True, exist_ok=True)
+    (data_dir / "a.json").write_text("noop")
+    (data_dir / "b.json").write_text("noop")
+    card_path = cards_dir / "wildcard.toml"
+    card_path.write_text('filepath = "<CARD_DIR>/../data/*.json"\n')
+
+    loader = CardLoader(cards_dir)
+    definition = loader.load_definition(card_path)
+
+    with pytest.raises(ValueError):
+        loader.resolve_paths(definition)
+
+
 def test_overlay_series_falls_back_to_global_style() -> None:
     definition = CardDefinition(
         path=Path("dummy"),
@@ -176,15 +193,67 @@ def test_overlay_variable_auto_discovers_series(tmp_path: Path) -> None:
                 overlay_variable="FRAG",
                 chart_style=None,
                 chart_height=None,
+            ),
         ),
-    ),
-    variables=("CLASS",),
-    chart_style=ChartStyle("scatter"),
-    pivot_variable="CLASS",
-    overlay_panels={
-        "overlay": OverlayDefinition(
-            name="overlay",
-            filepaths=[template],
+        variables=("CLASS",),
+        chart_style=ChartStyle("scatter"),
+        pivot_variable="CLASS",
+        overlay_panels={
+            "overlay": OverlayDefinition(
+                name="overlay",
+                filepaths=[template],
+                chart_styles=[None],
+                overlay_variable="FRAG",
+            )
+        },
+    )
+    matches = {
+        "overlay": [
+            CardMatch(
+                path=class_dir / "ms2_frag-100.00_scatter.json",
+                variables={"CLASS": "classA"},
+            )
+        ]
+    }
+    session = CardSession(definition=definition, matches=matches)
+
+    series = session._build_overlay_series(definition.overlay_panels["overlay"], session.selection).series
+
+    assert [entry.path.name for entry in series] == [
+        "ms2_frag-100.00_scatter.json",
+        "ms2_frag-200.00_scatter.json",
+    ]
+
+
+def test_overlay_variable_supports_spaced_placeholders(tmp_path: Path) -> None:
+    card_dir = tmp_path / "cards"
+    data_dir = card_dir / "data" / "mix"
+    class_dir = data_dir / "classA"
+    class_dir.mkdir(parents=True)
+    for frag in ("100.00", "200.00"):
+        (class_dir / f"ms2_frag-{frag}_scatter.json").write_text("noop")
+
+    template = "<CARD_DIR>/data/mix/{{ CLASS }}/ms2_frag-{{ FRAG }}_scatter.json"
+    definition = CardDefinition(
+        path=card_dir / "card.toml",
+        subcards=(
+            SubcardDefinition(
+                name="overlay",
+                filepath_template=template,
+                variables=("CLASS",),
+                filepaths=[template],
+                overlay_variable="FRAG",
+                chart_style=None,
+                chart_height=None,
+            ),
+        ),
+        variables=("CLASS",),
+        chart_style=ChartStyle("scatter"),
+        pivot_variable="CLASS",
+        overlay_panels={
+            "overlay": OverlayDefinition(
+                name="overlay",
+                filepaths=[template],
                 chart_styles=[None],
                 overlay_variable="FRAG",
             )

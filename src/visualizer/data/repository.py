@@ -127,7 +127,10 @@ class DatasetRepository:
     def _load_series_payload(self, payload: dict, data_section: dict, path: Path) -> Dataset:
         self._validate_series_payload(data_section, path)
         x_series = list(data_section.get("x_axis") or [])
-        y_series = list(data_section.get("y_axis") or [])
+        if "y_axis" not in data_section or data_section.get("y_axis") is None:
+            y_series = [1.0] * len(x_series)
+        else:
+            y_series = list(data_section.get("y_axis") or [])
         self._validate_axis_lengths(x_series, y_series, path)
 
         try:
@@ -176,18 +179,21 @@ class DatasetRepository:
         )
 
     def _validate_series_payload(self, data_section: dict, path: Path) -> None:
-        if "x_axis" not in data_section or "y_axis" not in data_section:
-            raise ValueError(f"JSON payload missing 'x_axis'/'y_axis': {path}")
+        if "x_axis" not in data_section:
+            raise ValueError(f"JSON payload missing 'x_axis': {path}")
         if not isinstance(data_section["x_axis"], Sequence) or isinstance(
             data_section["x_axis"], (str, bytes)
         ):
             raise ValueError(f"'x_axis' must be an array: {path}")
-        if not isinstance(data_section["y_axis"], Sequence) or isinstance(
-            data_section["y_axis"], (str, bytes)
-        ):
-            raise ValueError(f"'y_axis' must be an array of numbers: {path}")
-        if len(data_section["x_axis"]) == 0 or len(data_section["y_axis"]) == 0:
-            raise ValueError(f"'x_axis'/'y_axis' cannot be empty: {path}")
+        if len(data_section["x_axis"]) == 0:
+            raise ValueError(f"'x_axis' cannot be empty: {path}")
+        if "y_axis" in data_section and data_section["y_axis"] is not None:
+            if not isinstance(data_section["y_axis"], Sequence) or isinstance(
+                data_section["y_axis"], (str, bytes)
+            ):
+                raise ValueError(f"'y_axis' must be an array of numbers: {path}")
+            if len(data_section["y_axis"]) == 0:
+                raise ValueError(f"'y_axis' cannot be empty when provided: {path}")
 
     def _validate_table_payload(self, data_section: dict, path: Path) -> None:
         if "column_names" not in data_section or "row_names" not in data_section or "content" not in data_section:

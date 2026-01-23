@@ -73,6 +73,7 @@ class PanelManager:
         for idx, ((subcard, entries, paths, panel_kind), stretch) in enumerate(zip(panels, stretches)):
             panel_widget = QtWidgets.QWidget()
             panel_layout = QtWidgets.QVBoxLayout(panel_widget)
+            panel_layout.setContentsMargins(0, 4, 0, 4)
             if panel_kind == "table":
                 table_widget = TableView()
                 panel_layout.addWidget(table_widget)
@@ -89,20 +90,12 @@ class PanelManager:
             self._panel_kind_by_name[subcard.name] = panel_kind
             if panel_kind != "table":
                 plot_widget.enableAutoRange(x=True, y=True)
-                if synchronize_x_axis and idx < len(panels) - 1:
-                    plot_widget.hideAxis("bottom")
-                    axis = plot_widget.getPlotItem().getAxis("bottom")
-                    axis.setStyle(showValues=False, tickLength=0)
-                    axis.setPen(None)
-                    axis.setHeight(0)
-                    axis.setTicks([])
-                    plot_widget._bottom_axis_hidden = True  # type: ignore[attr-defined]
             if idx < len(panels) - 1:
                 separator = QtWidgets.QFrame()
                 separator.setFrameShape(QtWidgets.QFrame.HLine)
                 separator.setFrameShadow(QtWidgets.QFrame.Plain)
                 separator.setLineWidth(1)
-                separator.setMaximumHeight(2)
+                separator.setFixedHeight(1)
                 container_layout.addWidget(separator)
         self._panel_order = ordered_names
         if synchronize_x_axis:
@@ -136,6 +129,9 @@ class PanelManager:
     def panel_order(self) -> List[str]:
         return self._panel_order
 
+    def panel_kind_by_name(self, name: str) -> str | None:
+        return self._panel_kind_by_name.get(name)
+
     def synchronize_x_axes(self) -> None:
         if len(self._panel_plots) < 2:
             return
@@ -147,23 +143,6 @@ class PanelManager:
                 continue
         if self._synchronize_x:
             self._equalize_x_ranges()
-            for idx, plot in enumerate(self._panel_plots):
-                visible = idx == len(self._panel_plots) - 1
-                axis = plot.getPlotItem().getAxis("bottom")
-                if visible:
-                    plot.showAxis("bottom", show=True)
-                    axis.setStyle(showValues=True)
-                    axis.setHeight(None)
-                    axis.setPen(axis.textPen())
-                    axis.setTicks(None)
-                    plot._bottom_axis_hidden = False  # type: ignore[attr-defined]
-                else:
-                    plot.hideAxis("bottom")
-                    axis.setStyle(showValues=False, tickLength=0)
-                    axis.setPen(None)
-                    axis.setHeight(0)
-                    axis.setTicks([])
-                    plot._bottom_axis_hidden = True  # type: ignore[attr-defined]
 
     def _equalize_x_ranges(self) -> None:
         """Ensure all linked plots start with a common X range covering all data."""

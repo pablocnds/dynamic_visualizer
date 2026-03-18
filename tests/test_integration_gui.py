@@ -155,7 +155,9 @@ def test_range_overlay_renders_items(app: QtWidgets.QApplication) -> None:  # no
     plot = window._panel_plots[0] if window._panel_plots else None  # type: ignore[attr-defined]
     assert plot is not None
     items = plot.getPlotItem().items
-    assert any(isinstance(item, pg.LinearRegionItem) for item in items)
+    regions = [item for item in items if isinstance(item, pg.LinearRegionItem)]
+    assert regions
+    assert any(region.toolTip() for region in regions)
 
 
 def test_colorbars_absent_after_rerender(app: QtWidgets.QApplication) -> None:  # noqa: ARG001

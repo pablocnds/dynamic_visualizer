@@ -146,6 +146,48 @@ def test_range_kind_alias_warns(tmp_path: Path) -> None:
     assert isinstance(dataset, RangeDataset)
 
 
+def test_range_info_loads_and_preserves_multiline_entries(tmp_path: Path) -> None:
+    range_path = tmp_path / "ranges_info.json"
+    payload = {
+        "dataset": "ranges_info",
+        "data": {
+            "kind": "ranges",
+            "ranges": [[0, 1], [2, 3]],
+            "range_info": [
+                ["Window A", "score=0.8", "count=4"],
+                "Window B\nscore=0.5",
+            ],
+        },
+    }
+    range_path.write_text(json.dumps(payload))
+    repo = DatasetRepository()
+
+    dataset = repo.load(range_path)
+
+    assert isinstance(dataset, RangeDataset)
+    assert list(dataset.range_info) == [
+        "Window A\nscore=0.8\ncount=4",
+        "Window B\nscore=0.5",
+    ]
+
+
+def test_range_info_must_match_ranges_length(tmp_path: Path) -> None:
+    range_path = tmp_path / "ranges_bad_info.json"
+    payload = {
+        "dataset": "ranges_bad_info",
+        "data": {
+            "kind": "ranges",
+            "ranges": [[0, 1], [2, 3]],
+            "range_info": ["only_one_entry"],
+        },
+    }
+    range_path.write_text(json.dumps(payload))
+    repo = DatasetRepository()
+
+    with pytest.raises(ValueError, match="'range_info' must contain exactly 2 entries"):
+        repo.load(range_path)
+
+
 def test_table_validation_rejects_mismatched_dimensions(tmp_path: Path) -> None:
     bad_table = tmp_path / "bad_table.json"
     payload = {

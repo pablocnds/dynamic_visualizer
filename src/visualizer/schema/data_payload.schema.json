@@ -101,6 +101,11 @@
             }
           },
           "description": "Range pairs along the X-axis, each as [start, end]"
+        },
+        "range_info": {
+          "type": "array",
+          "items": {},
+          "description": "Optional per-range hover information. Must match the number of ranges."
         }
       },
       "allOf": [

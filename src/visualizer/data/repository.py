@@ -180,10 +180,12 @@ class DatasetRepository:
         self._validate_range_payload(data_section, path)
         raw_ranges = data_section.get("ranges") or []
         ranges = self._coerce_ranges(raw_ranges, path)
+        range_info = self._coerce_range_info(data_section.get("range_info"), expected=len(ranges), path=path)
         return RangeDataset(
             identifier=str(payload.get("dataset") or path.stem),
             source_path=path,
             ranges=ranges,
+            range_info=range_info,
             x_label=data_section.get("x_label"),
             y_label=data_section.get("y_label"),
             metadata={k: v for k, v in payload.items() if k != "data"},
@@ -288,6 +290,32 @@ class DatasetRepository:
             else:
                 ranges.append((end, start))
         return ranges
+
+    def _coerce_range_info(
+        self,
+        values: object | None,
+        *,
+        expected: int,
+        path: Path,
+    ) -> List[str | None]:
+        if values is None:
+            return [None] * expected
+        if not isinstance(values, Sequence) or isinstance(values, (str, bytes)):
+            raise ValueError(f"'range_info' must be an array when provided: {path}")
+        if len(values) != expected:
+            raise ValueError(f"'range_info' must contain exactly {expected} entries in {path}")
+        info: List[str | None] = []
+        for idx, entry in enumerate(values):
+            if entry is None:
+                info.append(None)
+                continue
+            if isinstance(entry, Sequence) and not isinstance(entry, (str, bytes)):
+                text = "\n".join(str(piece) for piece in entry)
+            else:
+                text = str(entry)
+            text = text.strip()
+            info.append(text if text else None)
+        return info
 
     @staticmethod
     def _validate_axis_lengths(

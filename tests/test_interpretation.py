@@ -81,6 +81,7 @@ def test_range_spec_builds_from_dataset() -> None:
         identifier="ranges",
         source_path=Path("dummy"),
         ranges=[(1.0, 2.0), (3.0, 4.0)],
+        range_info=["A", None],
         x_label="Time",
     )
     interpreter = DefaultInterpreter()
@@ -89,6 +90,8 @@ def test_range_spec_builds_from_dataset() -> None:
 
     assert spec.visualization == VisualizationType.RANGE
     assert spec.ranges == [(1.0, 2.0), (3.0, 4.0)]
+    assert spec.interactions is not None
+    assert [interaction.hover_text for interaction in spec.interactions] == ["A", None]
 
 
 def test_table_spec_merges_global_style_override_as_fallback() -> None:

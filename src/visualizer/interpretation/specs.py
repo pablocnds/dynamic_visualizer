@@ -25,6 +25,11 @@ class VisualizationType(str, Enum):
 
 
 @dataclass(frozen=True)
+class RenderInteraction:
+    hover_text: str | None = None
+
+
+@dataclass(frozen=True)
 class PlotSpec:
     dataset_id: str
     label: str | None
@@ -35,6 +40,7 @@ class PlotSpec:
     visualization: VisualizationType
     ranges: Sequence[tuple[float, float]] | None = None
     style_params: dict[str, Any] | None = None
+    interactions: Sequence[RenderInteraction] | None = None
 
     def cache_key(self) -> tuple:
         params_key = None
@@ -50,6 +56,7 @@ class PlotSpec:
             self.visualization,
             tuple(self.ranges) if self.ranges else None,
             params_key,
+            tuple(interaction.hover_text for interaction in self.interactions) if self.interactions else None,
         )
 
 
@@ -151,6 +158,14 @@ class DefaultInterpreter:
         style_params: dict[str, Any] | None = None,
     ) -> PlotSpec:
         visualization = override or VisualizationType.RANGE
+        interactions: list[RenderInteraction] | None = None
+        if dataset.range_info:
+            interactions = [
+                RenderInteraction(hover_text=info)
+                for info in dataset.range_info
+            ]
+            if not any(interaction.hover_text for interaction in interactions):
+                interactions = None
         return PlotSpec(
             dataset_id=dataset.identifier,
             label=label or dataset.identifier,
@@ -161,6 +176,7 @@ class DefaultInterpreter:
             visualization=visualization,
             ranges=list(dataset.ranges),
             style_params=style_params,
+            interactions=interactions,
         )
 
     def _infer_visualization(self, dataset: Dataset) -> VisualizationType:

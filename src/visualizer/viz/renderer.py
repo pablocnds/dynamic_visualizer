@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from typing import Iterable
+from typing import Iterable, Sequence
 
 import pyqtgraph as pg
 import numpy as np
 
-from visualizer.interpretation.specs import PlotSpec, VisualizationType
+from visualizer.interpretation.specs import PlotSpec, RenderInteraction, VisualizationType
+from visualizer.viz.interactions import InteractionManager, ItemInteraction
 
 _MAX_1D_SAMPLES = 10000
 _MAX_EVENT_BINS = 800
@@ -126,6 +127,7 @@ class PlotRenderer:
         pg.setConfigOption("foreground", "k")
         self._colorbars: dict[int, list[pg.ColorBarItem]] = {}
         self._axis_overlays: dict[int, _TopAxisOverlay] = {}
+        self._interaction_manager = InteractionManager()
 
     def render(
         self,
@@ -134,6 +136,7 @@ class PlotRenderer:
         show_x_axis: bool | None = None,
         show_y_axis: bool | None = None,
     ) -> None:
+        self._interaction_manager.clear_widget(widget)
         self._clear_viewbox_handlers(widget)
         self._clear_legend(widget)
         self._clear_colorbar(widget)
@@ -178,6 +181,7 @@ class PlotRenderer:
         show_y_axis: bool | None = None,
     ) -> None:
         specs = list(specs)
+        self._interaction_manager.clear_widget(widget)
         self._clear_viewbox_handlers(widget)
         if not specs:
             widget.clear()
@@ -232,6 +236,7 @@ class PlotRenderer:
             widget.legend = None  # type: ignore[attr-defined]
 
     def reset_widget(self, widget: pg.PlotWidget) -> None:
+        self._interaction_manager.clear_widget(widget)
         self._clear_legend(widget)
         self._clear_colorbar(widget)
         self._clear_viewbox_handlers(widget)
@@ -341,7 +346,14 @@ class PlotRenderer:
 
         alpha = self._resolve_alpha(spec.style_params, fallback=120)
         colors = self._resolve_range_colors(len(ranges), spec.style_params, alpha)
-        self._add_range_regions(plot_item, ranges, colors, z_value=0)
+        self._add_range_regions(
+            widget,
+            plot_item,
+            ranges,
+            colors,
+            z_value=0,
+            interactions=spec.interactions,
+        )
 
         widget.setLabel("bottom", None)
         widget.setYRange(0, 1, padding=0)
@@ -832,7 +844,14 @@ class PlotRenderer:
         alpha = self._resolve_alpha(spec.style_params, fallback=120)
         colors = self._resolve_range_colors(len(ranges), spec.style_params, alpha)
         plot_item = widget.getPlotItem()
-        self._add_range_regions(plot_item, ranges, colors, z_value=0)
+        self._add_range_regions(
+            widget,
+            plot_item,
+            ranges,
+            colors,
+            z_value=0,
+            interactions=spec.interactions,
+        )
         return colors
 
     def _render_mixed_overlay(
@@ -895,7 +914,14 @@ class PlotRenderer:
                 return
             alpha = self._resolve_alpha(spec.style_params, fallback=_BACKGROUND_ALPHA)
             colors = self._resolve_range_colors(len(ranges), spec.style_params, alpha)
-            self._add_range_regions(plot_item, ranges, colors, z_value=-20)
+            self._add_range_regions(
+                widget,
+                plot_item,
+                ranges,
+                colors,
+                z_value=-20,
+                interactions=spec.interactions,
+            )
 
     def _render_colormap_background(
         self,
@@ -1203,13 +1229,15 @@ class PlotRenderer:
 
     def _add_range_regions(
         self,
+        widget: pg.PlotWidget,
         plot_item: pg.PlotItem,
         ranges: list[tuple[float, float]],
         colors: list[pg.QtGui.QColor],
         z_value: float,
+        interactions: Sequence[RenderInteraction] | None = None,
     ) -> None:
         transparent_pen = pg.mkPen(color=(0, 0, 0, 0))
-        for (start, end), color in zip(ranges, colors):
+        for index, ((start, end), color) in enumerate(zip(ranges, colors)):
             region = pg.LinearRegionItem(
                 values=(start, end),
                 orientation="vertical",
@@ -1219,3 +1247,7 @@ class PlotRenderer:
             )
             region.setZValue(z_value)
             plot_item.addItem(region)
+            interaction = None
+            if interactions and index < len(interactions):
+                interaction = ItemInteraction(hover_text=interactions[index].hover_text)
+            self._interaction_manager.bind_item(widget, region, interaction)

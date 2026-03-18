@@ -3,6 +3,11 @@
   "data": {
     "kind": "ranges",
     "x_label": "Time",
-    "ranges": [[0.2, 1.0], [1.8, 2.9], [3.6, 4.4]]
+    "ranges": [[0.2, 1.0], [1.8, 2.9], [3.6, 4.4]],
+    "range_info": [
+      ["Region B1", "Intensity: low", "Class: B"],
+      ["Region B2", "Intensity: medium", "Class: B"],
+      ["Region B3", "Intensity: high", "Class: B"]
+    ]
   }
 }

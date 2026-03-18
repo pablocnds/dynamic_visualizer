@@ -71,6 +71,7 @@ class RangeDataset:
     identifier: str
     source_path: Path
     ranges: Sequence[tuple[float, float]]
+    range_info: Sequence[str | None] = field(default_factory=tuple)
     x_label: str | None = None
     y_label: str | None = None
     metadata: Dict[str, Any] = field(default_factory=dict)
@@ -81,6 +82,7 @@ class RangeDataset:
             self.kind,
             self.identifier,
             tuple(tuple(pair) for pair in self.ranges),
+            tuple(self.range_info),
             self.x_label,
             self.y_label,
         )

@@ -7,7 +7,7 @@ pg = pytest.importorskip("pyqtgraph", reason="pyqtgraph not installed; install r
 
 from PySide6 import QtWidgets  # type: ignore
 
-from visualizer.interpretation.specs import PlotSpec, VisualizationType
+from visualizer.interpretation.specs import PlotSpec, RenderInteraction, VisualizationType
 from visualizer.viz.renderer import PlotRenderer
 
 
@@ -183,6 +183,31 @@ def test_range_render_does_not_raise(app: QtWidgets.QApplication) -> None:
         ranges=[(1.0, 2.0), (3.0, 4.0)],
     )
     renderer.render(widget, spec)
+
+
+def test_range_render_applies_hover_tooltips(app: QtWidgets.QApplication) -> None:
+    renderer = PlotRenderer()
+    widget = pg.PlotWidget()
+    spec = PlotSpec(
+        dataset_id="d7",
+        label=None,
+        x=[],
+        y=[],
+        x_label="time",
+        y_label=None,
+        visualization=VisualizationType.RANGE,
+        ranges=[(1.0, 2.0), (3.0, 4.0)],
+        interactions=[
+            RenderInteraction(hover_text="Window A"),
+            RenderInteraction(hover_text="Window B"),
+        ],
+    )
+    renderer.render(widget, spec)
+
+    regions = [item for item in widget.getPlotItem().items if isinstance(item, pg.LinearRegionItem)]
+    assert len(regions) == 2
+    assert regions[0].toolTip() == "Window A"
+    assert regions[1].toolTip() == "Window B"
 
 
 def test_colormap_rect_alignment(app: QtWidgets.QApplication) -> None:

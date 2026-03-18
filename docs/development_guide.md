@@ -20,7 +20,7 @@ Desktop GUI (PySide6 + PyQtGraph) that loads JSON data, infers sensible defaults
 ## Data Contracts
 - JSON series: must match `src/visualizer/schema/data_payload.schema.json` (`data.x_axis` required; optional `data.y_axis` must match length when present); non-numeric Y is rejected; labels are optional. Eventline plots ignore `data.y_axis`.
 - JSON tables: use `data.column_names`/`data.row_names` with a row-major `data.content` matrix; lengths must match. Optional `data.table_style` can define a global rule plus row/column overrides (row/column arrays must match table dimensions exactly).
-- JSON ranges: use `data.ranges` as an array of `[start, end]` pairs (numeric); labels are optional; use `data.kind = "ranges"` to avoid warnings (legacy `data.kind = "range"` still loads with a warning).
+- JSON ranges: use `data.ranges` as an array of `[start, end]` pairs (numeric); optional `data.range_info` entries (same length as `ranges`) are shown as hover tooltips; use `data.kind = "ranges"` to avoid warnings (legacy `data.kind = "range"` still loads with a warning).
 - `data.kind` is optional (`series`, `table`, or `ranges`); when omitted the loader auto-detects based on the available fields.
 - CSV is temporarily disabled and will return in a future update.
 

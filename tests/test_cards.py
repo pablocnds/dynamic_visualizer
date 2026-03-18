@@ -325,6 +325,7 @@ def test_visualization_type_accepts_colormap_aliases() -> None:
     assert VisualizationType.from_string("heatmap1d") == VisualizationType.COLORMAP
     assert VisualizationType.from_string("eventline") == VisualizationType.EVENTLINE
     assert VisualizationType.from_string("events") == VisualizationType.EVENTLINE
+    assert VisualizationType.from_string("stick") == VisualizationType.STICK
 
 
 def test_overlay_series_falls_back_to_subcard_style() -> None:
@@ -438,3 +439,139 @@ CLASS = "^classA$"
     default_matches = matches["default"]
     assert len(default_matches) == 1
     assert default_matches[0].path.parent.name == "classA"
+
+
+def test_card_session_handles_dataset_specific_subset_names(tmp_path: Path) -> None:
+    cards_dir = tmp_path / "cards"
+    cards_dir.mkdir(parents=True)
+    card_path = cards_dir / "subset_card.toml"
+    card_path.write_text(
+        """
+[global]
+pivot_chart = "{{COMPOUND}}"
+
+filepath = "<CARD_DIR>/../data/processed/{{DATASET}}/{{SUBSET}}/{{COMPOUND}}/signal.json"
+"""
+    )
+    (tmp_path / "data" / "processed" / "R10_Standard_Mixes" / "iterative_excL_20eV" / "compound_a").mkdir(
+        parents=True
+    )
+    (tmp_path / "data" / "processed" / "standards60" / "iterative_excL_10eV" / "compound_a").mkdir(
+        parents=True
+    )
+    (tmp_path / "data" / "processed" / "R10_Standard_Mixes" / "iterative_excL_20eV" / "compound_a" / "signal.json").write_text(
+        "noop"
+    )
+    (tmp_path / "data" / "processed" / "standards60" / "iterative_excL_10eV" / "compound_a" / "signal.json").write_text(
+        "noop"
+    )
+
+    loader = CardLoader(cards_dir)
+    definition = loader.load_definition(card_path)
+    matches = loader.resolve_paths(definition)
+    session = CardSession(definition=definition, matches=matches)
+
+    assert session.current_paths()["default"].name == "signal.json"
+    assert session.selection["DATASET"] in {"R10_Standard_Mixes", "standards60"}
+    assert session.selection["SUBSET"] in {"iterative_excL_20eV", "iterative_excL_10eV"}
+
+
+def test_session_recovers_when_default_variable_values_do_not_overlap() -> None:
+    definition = CardDefinition(
+        path=Path("dummy"),
+        subcards=(
+            SubcardDefinition(
+                name="default",
+                filepath_template="dummy",
+                variables=("COMPOUND", "DATASET", "SUBSET"),
+                filepaths=["dummy"],
+                overlay_variable=None,
+                chart_style=None,
+                chart_height=None,
+            ),
+        ),
+        variables=("COMPOUND", "DATASET", "SUBSET"),
+        chart_style=ChartStyle("line"),
+        pivot_variable="COMPOUND",
+    )
+    matches = {
+        "default": [
+            CardMatch(
+                path=Path("/tmp/r10_mix.json"),
+                variables={
+                    "COMPOUND": "A",
+                    "DATASET": "R10_Standard_Mixes",
+                    "SUBSET": "iterative_excL_20eV",
+                },
+            ),
+            CardMatch(
+                path=Path("/tmp/std_mix.json"),
+                variables={
+                    "COMPOUND": "B",
+                    "DATASET": "standards60",
+                    "SUBSET": "iterative_excL_10eV",
+                },
+            ),
+        ]
+    }
+
+    session = CardSession(definition=definition, matches=matches)
+
+    selected_values = {key: session.selection.get(key) for key in definition.variables}
+    assert selected_values in [match.variables for match in matches["default"]]
+    assert session.current_paths()["default"] in {Path("/tmp/r10_mix.json"), Path("/tmp/std_mix.json")}
+
+
+def test_update_selection_keeps_selected_variable_when_recovering() -> None:
+    definition = CardDefinition(
+        path=Path("dummy"),
+        subcards=(
+            SubcardDefinition(
+                name="default",
+                filepath_template="dummy",
+                variables=("COMPOUND", "DATASET", "SUBSET"),
+                filepaths=["dummy"],
+                overlay_variable=None,
+                chart_style=None,
+                chart_height=None,
+            ),
+        ),
+        variables=("COMPOUND", "DATASET", "SUBSET"),
+        chart_style=ChartStyle("line"),
+        pivot_variable="COMPOUND",
+    )
+    matches = {
+        "default": [
+            CardMatch(
+                path=Path("/tmp/r10_20.json"),
+                variables={
+                    "COMPOUND": "A",
+                    "DATASET": "R10_Standard_Mixes",
+                    "SUBSET": "iterative_excL_20eV",
+                },
+            ),
+            CardMatch(
+                path=Path("/tmp/r10_30.json"),
+                variables={
+                    "COMPOUND": "B",
+                    "DATASET": "R10_Standard_Mixes",
+                    "SUBSET": "iterative_excL_30eV",
+                },
+            ),
+            CardMatch(
+                path=Path("/tmp/std_10.json"),
+                variables={
+                    "COMPOUND": "C",
+                    "DATASET": "standards60",
+                    "SUBSET": "iterative_excL_10eV",
+                },
+            ),
+        ]
+    }
+
+    session = CardSession(definition=definition, matches=matches)
+    session.update_selection("DATASET", "standards60")
+
+    assert session.selection["DATASET"] == "standards60"
+    selected_values = {key: session.selection.get(key) for key in definition.variables}
+    assert selected_values in [match.variables for match in matches["default"]]

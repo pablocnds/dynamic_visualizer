@@ -88,6 +88,7 @@ class CardSession:
         pivot = self.definition.pivot_variable
         if not pivot:
             raise ValueError("Card does not define a pivot variable")
+        self._ensure_valid_selection(preferred_variable=pivot)
         values = self.available_values(pivot, constrained=True)
         if not values:
             raise ValueError("No values available for pivot variable")
@@ -104,7 +105,8 @@ class CardSession:
         if variable not in self.definition.variables:
             raise ValueError(f"Unknown variable {variable}")
         self.selection[variable] = value
-        return self.current_paths()
+        matches = self._ensure_valid_selection(preferred_variable=variable)
+        return {name: match.path for name, match in matches.items()}
 
     def available_values(self, variable: str, constrained: bool = False) -> List[str]:
         if not constrained:
@@ -140,7 +142,7 @@ class CardSession:
                 return False
         return True
 
-    def _ensure_valid_selection(self) -> Dict[str, CardMatch]:
+    def _ensure_valid_selection(self, preferred_variable: str | None = None) -> Dict[str, CardMatch]:
         matches = self._collect_matches(self.selection)
         if matches:
             return matches
@@ -151,7 +153,41 @@ class CardSession:
                 matches = self._collect_matches(self.selection)
                 if matches:
                     return matches
+        fallback_match = self._closest_match(preferred_variable=preferred_variable)
+        if fallback_match:
+            self.selection.update(fallback_match.variables)
+            matches = self._collect_matches(self.selection)
+            if matches:
+                return matches
         raise ValueError("No dataset matches the current card selection")
+
+    def _closest_match(self, preferred_variable: str | None = None) -> CardMatch | None:
+        best_match: CardMatch | None = None
+        best_score: tuple[int, int, int] | None = None
+        preferred_value = self.selection.get(preferred_variable) if preferred_variable else None
+        for subcard in self.definition.subcards:
+            for match in self.matches.get(subcard.name, []):
+                diffs = 0
+                overlap = 0
+                for var_name, var_value in match.variables.items():
+                    current = self.selection.get(var_name)
+                    if current is None:
+                        continue
+                    overlap += 1
+                    if current != var_value:
+                        diffs += 1
+                preferred_penalty = 0
+                if preferred_variable:
+                    preferred_match = match.variables.get(preferred_variable)
+                    if preferred_match is None:
+                        preferred_penalty = 2
+                    elif preferred_value is not None and preferred_match != preferred_value:
+                        preferred_penalty = 1
+                score = (preferred_penalty, diffs, -overlap)
+                if best_score is None or score < best_score:
+                    best_score = score
+                    best_match = match
+        return best_match
 
     def _collect_matches(self, criteria: Dict[str, str]) -> Dict[str, CardMatch]:
         collected: Dict[str, CardMatch] = {}

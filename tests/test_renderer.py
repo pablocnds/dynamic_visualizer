@@ -91,6 +91,31 @@ def test_eventline_accepts_single_dimension(app: QtWidgets.QApplication) -> None
     renderer.render(widget, spec)
 
 
+def test_stick_render_draws_vertical_sticks(app: QtWidgets.QApplication) -> None:
+    renderer = PlotRenderer()
+    widget = pg.PlotWidget()
+    spec = PlotSpec(
+        dataset_id="msms",
+        label=None,
+        x=[1.0, 3.0, 3.1],
+        y=[10.0, 20.0, 12.0],
+        x_label="mz",
+        y_label="intensity",
+        visualization=VisualizationType.STICK,
+        style_params={"color": "#008855", "line_width": 1.5},
+    )
+    renderer.render(widget, spec)
+
+    plot_items = [item for item in widget.getPlotItem().items if isinstance(item, pg.PlotDataItem)]
+    assert plot_items
+    x_data, y_data = plot_items[0].getData()
+    assert list(x_data[:6]) == [1.0, 1.0, 3.0, 3.0, 3.1, 3.1]
+    assert list(y_data[:6]) == [0.0, 10.0, 0.0, 20.0, 0.0, 12.0]
+    pen = plot_items[0].opts["pen"]
+    assert pen.widthF() == pytest.approx(1.5)
+    assert pen.color().green() > 100
+
+
 def test_overlay_allows_one_dimensional_mix(app: QtWidgets.QApplication) -> None:
     renderer = PlotRenderer()
     widget = pg.PlotWidget()
@@ -115,6 +140,33 @@ def test_overlay_allows_one_dimensional_mix(app: QtWidgets.QApplication) -> None
         ),
     ]
     renderer.render_multiple(widget, specs)
+
+
+def test_overlay_allows_stick_and_line(app: QtWidgets.QApplication) -> None:
+    renderer = PlotRenderer()
+    widget = pg.PlotWidget()
+    specs = [
+        PlotSpec(
+            dataset_id="d_line",
+            label="line",
+            x=[0, 1, 2],
+            y=[1, 2, 3],
+            x_label="x",
+            y_label="y",
+            visualization=VisualizationType.LINE,
+        ),
+        PlotSpec(
+            dataset_id="d_stick",
+            label="stick",
+            x=[0.1, 1.3, 1.4],
+            y=[4, 2, 5],
+            x_label="x",
+            y_label="y",
+            visualization=VisualizationType.STICK,
+        ),
+    ]
+    renderer.render_multiple(widget, specs)
+    assert any(isinstance(item, pg.PlotDataItem) for item in widget.getPlotItem().items)
 
 
 def test_range_render_does_not_raise(app: QtWidgets.QApplication) -> None:

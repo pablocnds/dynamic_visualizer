@@ -10,6 +10,7 @@ from visualizer.data.models import DataPayload, Dataset, RangeDataset, TableData
 class VisualizationType(str, Enum):
     LINE = "line"
     SCATTER = "scatter"
+    STICK = "stick"
     COLORMAP = "colormap"
     EVENTLINE = "eventline"
     RANGE = "ranges"

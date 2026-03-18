@@ -43,6 +43,21 @@ def test_scatter_plot_keeps_original_order() -> None:
     assert list(spec.y) == [30.0, 10.0, 20.0]
 
 
+def test_stick_plot_keeps_original_order() -> None:
+    dataset = Dataset(
+        identifier="unsorted",
+        source_path=Path("dummy"),
+        x=[3, 1, 2],
+        y=[30.0, 10.0, 20.0],
+    )
+    interpreter = DefaultInterpreter()
+
+    spec = interpreter.build_plot_spec(dataset, override=VisualizationType.STICK)
+
+    assert list(spec.x) == [3, 1, 2]
+    assert list(spec.y) == [30.0, 10.0, 20.0]
+
+
 def test_table_spec_builds_from_dataset() -> None:
     dataset = TableDataset(
         identifier="table",

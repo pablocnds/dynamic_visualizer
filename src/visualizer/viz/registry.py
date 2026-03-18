@@ -61,6 +61,12 @@ class VisualizationRegistry:
                 aliases=(),
             ),
             VisualizationHandler(
+                name="stick",
+                label="Stick",
+                visualization=VisualizationType.STICK,
+                aliases=(),
+            ),
+            VisualizationHandler(
                 name="colormap",
                 label="Colormap (1D)",
                 visualization=VisualizationType.COLORMAP,

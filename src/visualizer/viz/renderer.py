@@ -11,6 +11,9 @@ _MAX_1D_SAMPLES = 10000
 _MAX_EVENT_BINS = 800
 _EVENT_BAR_WIDTH_PX = 2.0
 _BACKGROUND_ALPHA = 90
+_DEFAULT_SERIES_COLOR = (50, 110, 240)
+_DEFAULT_SCATTER_ALPHA = 180
+_DEFAULT_STICK_ALPHA = 220
 
 
 class _TopAxisOverlay:
@@ -141,23 +144,7 @@ class PlotRenderer:
         plot_item.getAxis("left").setStyle(showValues=True)
         plot_item.showAxis("bottom")
 
-        if spec.visualization == VisualizationType.LINE:
-            widget.plot(
-                spec.x,
-                spec.y,
-                pen=pg.mkPen(color=(50, 110, 240), width=2),
-                symbol=None,
-            )
-        elif spec.visualization == VisualizationType.SCATTER:
-            widget.plot(
-                spec.x,
-                spec.y,
-                pen=None,
-                symbol="o",
-                symbolBrush=(50, 110, 240, 180),
-                symbolSize=6,
-            )
-        elif spec.visualization == VisualizationType.EVENTLINE:
+        if spec.visualization == VisualizationType.EVENTLINE:
             self._render_eventline(widget, spec, show_axis=show_x_axis)
             return
         elif spec.visualization == VisualizationType.RANGE:
@@ -166,6 +153,11 @@ class PlotRenderer:
         elif spec.visualization == VisualizationType.COLORMAP:
             self._render_colormap(widget, spec, show_axis=show_x_axis)
             return
+        self._render_two_dimensional_series(
+            widget,
+            spec,
+            color=pg.mkColor(_DEFAULT_SERIES_COLOR),
+        )
         widget.setLabel("bottom", spec.x_label or "X Axis")
         widget.setLabel("left", spec.y_label or "Y Axis")
         widget.showGrid(x=True, y=True, alpha=0.2)
@@ -219,24 +211,7 @@ class PlotRenderer:
         for index, spec in enumerate(specs):
             color = pg.intColor(index, hues=len(specs) * 2)
             label = getattr(spec, "label", None) or spec.dataset_id
-            if spec.visualization == VisualizationType.LINE:
-                widget.plot(
-                    spec.x,
-                    spec.y,
-                    pen=pg.mkPen(color=color, width=2),
-                    symbol=None,
-                    name=label,
-                )
-            else:
-                widget.plot(
-                    spec.x,
-                    spec.y,
-                    pen=None,
-                    symbol="o",
-                    symbolBrush=color,
-                    symbolSize=6,
-                    name=label,
-                )
+            self._render_two_dimensional_series(widget, spec, color=color, name=label)
         first = specs[0]
         widget.setLabel("bottom", first.x_label or "X Axis")
         widget.setLabel("left", first.y_label or "Y Axis")
@@ -466,6 +441,138 @@ class PlotRenderer:
             VisualizationType.EVENTLINE,
             VisualizationType.RANGE,
         }
+
+    def _render_two_dimensional_series(
+        self,
+        widget: pg.PlotWidget,
+        spec: PlotSpec,
+        color: pg.QtGui.QColor,
+        name: str | None = None,
+    ) -> None:
+        if spec.visualization == VisualizationType.LINE:
+            pen_color = self._resolve_series_color(spec.style_params, color, fallback_alpha=255)
+            line_width = self._resolve_line_width(spec.style_params, fallback=2.0)
+            kwargs = {"name": name} if name else {}
+            widget.plot(
+                spec.x,
+                spec.y,
+                pen=pg.mkPen(color=pen_color, width=line_width),
+                symbol=None,
+                **kwargs,
+            )
+            return
+        if spec.visualization == VisualizationType.SCATTER:
+            brush_color = self._resolve_series_color(
+                spec.style_params,
+                color,
+                fallback_alpha=_DEFAULT_SCATTER_ALPHA,
+            )
+            marker_size = self._resolve_marker_size(spec.style_params, fallback=6.0)
+            kwargs = {"name": name} if name else {}
+            widget.plot(
+                spec.x,
+                spec.y,
+                pen=None,
+                symbol="o",
+                symbolBrush=brush_color,
+                symbolSize=marker_size,
+                **kwargs,
+            )
+            return
+        if spec.visualization == VisualizationType.STICK:
+            self._render_stick_series(widget, spec, color=color, name=name)
+            return
+        raise ValueError(f"Unsupported two-dimensional visualization type: {spec.visualization.value}")
+
+    def _render_stick_series(
+        self,
+        widget: pg.PlotWidget,
+        spec: PlotSpec,
+        color: pg.QtGui.QColor,
+        name: str | None = None,
+    ) -> None:
+        x_numeric = self._coerce_array(spec.x, fallback_range=True)
+        y_numeric = self._coerce_array(spec.y)
+        if x_numeric.size == 0 or y_numeric.size == 0:
+            return
+        count = min(x_numeric.size, y_numeric.size)
+        x_values = x_numeric[:count]
+        y_values = y_numeric[:count]
+        valid = np.isfinite(x_values) & np.isfinite(y_values)
+        if not np.any(valid):
+            return
+        x_values = x_values[valid]
+        y_values = y_values[valid]
+        x_pairs = np.repeat(x_values, 2)
+        y_pairs = np.empty(x_pairs.size, dtype=float)
+        y_pairs[0::2] = 0.0
+        y_pairs[1::2] = y_values
+
+        pen_color = self._resolve_series_color(
+            spec.style_params,
+            color,
+            fallback_alpha=_DEFAULT_STICK_ALPHA,
+        )
+        line_width = self._resolve_line_width(spec.style_params, fallback=1.0)
+        kwargs = {"name": name} if name else {}
+        widget.plot(
+            x_pairs,
+            y_pairs,
+            pen=pg.mkPen(color=pen_color, width=line_width),
+            connect="pairs",
+            symbol=None,
+            **kwargs,
+        )
+
+    def _resolve_series_color(
+        self,
+        style_params: dict | None,
+        fallback_color: pg.QtGui.QColor | tuple[int, int, int] | tuple[int, int, int, int],
+        fallback_alpha: int,
+    ) -> pg.QtGui.QColor:
+        color = pg.mkColor(fallback_color)
+        color.setAlpha(max(0, min(255, int(fallback_alpha))))
+        if style_params and "color" in style_params:
+            try:
+                color = pg.mkColor(style_params.get("color"))
+            except Exception:
+                pass
+        alpha = self._resolve_alpha(style_params, fallback=color.alpha())
+        color.setAlpha(alpha)
+        return color
+
+    def _resolve_line_width(self, style_params: dict | None, fallback: float) -> float:
+        if not style_params:
+            return fallback
+        for key in ("line_width", "width"):
+            width = self._coerce_positive_float(style_params.get(key))
+            if width is not None:
+                return width
+        return fallback
+
+    def _resolve_marker_size(self, style_params: dict | None, fallback: float) -> float:
+        if not style_params:
+            return fallback
+        for key in ("marker_size", "size"):
+            size = self._coerce_positive_float(style_params.get(key))
+            if size is not None:
+                return size
+        return fallback
+
+    @staticmethod
+    def _coerce_positive_float(value: object | None) -> float | None:
+        if isinstance(value, bool) or value is None:
+            return None
+        if isinstance(value, (int, float)):
+            numeric = float(value)
+        else:
+            try:
+                numeric = float(str(value))
+            except (TypeError, ValueError):
+                return None
+        if numeric <= 0:
+            return None
+        return numeric
 
     def _coerce_array(self, values, fallback_range: bool = False) -> np.ndarray:
         coerced: list[float] = []
@@ -754,24 +861,7 @@ class PlotRenderer:
         for index, spec in enumerate(two_dim_specs):
             color = pg.intColor(index, hues=len(two_dim_specs) * 2)
             label = getattr(spec, "label", None) or spec.dataset_id
-            if spec.visualization == VisualizationType.LINE:
-                widget.plot(
-                    spec.x,
-                    spec.y,
-                    pen=pg.mkPen(color=color, width=2),
-                    symbol=None,
-                    name=label,
-                )
-            else:
-                widget.plot(
-                    spec.x,
-                    spec.y,
-                    pen=None,
-                    symbol="o",
-                    symbolBrush=color,
-                    symbolSize=6,
-                    name=label,
-                )
+            self._render_two_dimensional_series(widget, spec, color=color, name=label)
 
         first = two_dim_specs[0]
         widget.setLabel("bottom", first.x_label or "X Axis")
@@ -1042,6 +1132,8 @@ class PlotRenderer:
     def _compute_y_bounds(self, specs: list[PlotSpec]) -> tuple[float, float]:
         values: list[float] = []
         for spec in specs:
+            if spec.visualization == VisualizationType.STICK:
+                values.append(0.0)
             y_numeric = self._coerce_array(spec.y)
             if y_numeric.size:
                 finite = y_numeric[np.isfinite(y_numeric)]

@@ -94,7 +94,7 @@ class SessionController:
         """Resolve the current card selection into datasets ready for rendering."""
 
         if not self.card_session:
-            return [], []
+            return [], [], []
 
         match_map = self.card_session.current_matches()
         plans: List[PanelPlan] = []

@@ -108,6 +108,18 @@ def test_eventline_card_renders_items(app: QtWidgets.QApplication) -> None:  # n
     assert not [m for m in messages if "invalid row" in m or "Scale" in m]
 
 
+def test_stick_card_renders_items(app: QtWidgets.QApplication) -> None:  # noqa: ARG001
+    window = _create_window()
+    card_path = window._cards_dir / "13-stick_card.toml"  # type: ignore[attr-defined]
+    with capture_qt_messages() as messages:
+        window._activate_card(card_path)
+    plot = window._panel_plots[0] if window._panel_plots else None  # type: ignore[attr-defined]
+    assert plot is not None
+    items = plot.getPlotItem().items
+    assert any(isinstance(item, pg.PlotDataItem) for item in items)
+    assert not [m for m in messages if "invalid row" in m or "Scale" in m]
+
+
 def test_one_dim_overlay_has_no_colorbars(app: QtWidgets.QApplication) -> None:  # noqa: ARG001
     window = _create_window()
     card_path = window._cards_dir / "10-overlay_1d_card.toml"  # type: ignore[attr-defined]

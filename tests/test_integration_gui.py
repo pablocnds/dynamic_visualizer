@@ -231,3 +231,100 @@ def test_restore_state_uses_card_dir_when_card_file_is_missing(
     assert window._cards_dir == cards_dir  # type: ignore[attr-defined]
     assert window._card_list.count() == 1  # type: ignore[attr-defined]
     assert window._sidebar_mode == "card"  # type: ignore[attr-defined]
+
+
+def test_recent_sessions_prune_invalid_or_empty_paths(
+    app: QtWidgets.QApplication, tmp_path: Path, monkeypatch: pytest.MonkeyPatch  # noqa: ARG001
+) -> None:
+    valid_cards = tmp_path / "cards_valid"
+    valid_cards.mkdir(parents=True)
+    (valid_cards / "demo.toml").write_text('filepath = "<CARD_DIR>/../data/*.json"\n')
+    empty_cards = tmp_path / "cards_empty"
+    empty_cards.mkdir(parents=True)
+
+    valid_data = tmp_path / "data_valid"
+    _write_series(valid_data / "a.json", [0.0], [1.0])
+    empty_data = tmp_path / "data_empty"
+    empty_data.mkdir(parents=True)
+
+    saved_state = {
+        "recent_sessions": [
+            {"card_dir": str(valid_cards)},
+            {"card_dir": str(empty_cards)},
+            {"data_dir": str(valid_data)},
+            {"data_dir": str(empty_data)},
+            {"card_dir": str(tmp_path / "missing")},
+        ]
+    }
+    monkeypatch.setattr("visualizer.gui.main_window.StateManager.load", lambda _self: saved_state)
+    monkeypatch.setattr("visualizer.gui.main_window.StateManager.save", lambda _self, _state: None)
+
+    window = MainWindow(data_dir=None, cards_dir=None)
+
+    recent_sessions = window._recent_sessions  # type: ignore[attr-defined]
+    assert len(recent_sessions) == 2
+    assert any("card_dir" in session for session in recent_sessions)
+    assert any("data_dir" in session for session in recent_sessions)
+    action_texts = [action.text() for action in window._recent_sessions_menu.actions()]  # type: ignore[attr-defined]
+    assert any(text.startswith("Cards: ") for text in action_texts)
+    assert any(text.startswith("Data: ") for text in action_texts)
+
+
+def test_open_previous_session_restores_selected_snapshot(
+    app: QtWidgets.QApplication, tmp_path: Path, monkeypatch: pytest.MonkeyPatch  # noqa: ARG001
+) -> None:
+    data_a = tmp_path / "data_a"
+    data_b = tmp_path / "data_b"
+    _write_series(data_a / "a.json", [0.0], [1.0])
+    _write_series(data_b / "b.json", [0.0], [2.0])
+
+    saved_state = {
+        "data_dir": str(data_a),
+        "recent_sessions": [
+            {"data_dir": str(data_a)},
+            {"data_dir": str(data_b)},
+        ],
+    }
+    monkeypatch.setattr("visualizer.gui.main_window.StateManager.load", lambda _self: saved_state)
+    monkeypatch.setattr("visualizer.gui.main_window.StateManager.save", lambda _self, _state: None)
+
+    window = MainWindow(data_dir=None, cards_dir=None)
+    window._open_recent_session(1)  # type: ignore[attr-defined]
+
+    assert window._data_dir == data_b.resolve()  # type: ignore[attr-defined]
+    assert window._file_list.count() == 1  # type: ignore[attr-defined]
+    assert window._sidebar_mode == "data"  # type: ignore[attr-defined]
+    assert window._recent_sessions[0]["data_dir"] == str(data_b.resolve())  # type: ignore[attr-defined]
+
+
+def test_save_state_persists_recent_sessions_history(
+    app: QtWidgets.QApplication, tmp_path: Path, monkeypatch: pytest.MonkeyPatch  # noqa: ARG001
+) -> None:
+    data_a = tmp_path / "data_a"
+    data_b = tmp_path / "data_b"
+    _write_series(data_a / "a.json", [0.0], [1.0])
+    _write_series(data_b / "b.json", [0.0], [2.0])
+
+    saved_state = {
+        "data_dir": str(data_a),
+        "recent_sessions": [{"data_dir": str(data_b)}],
+    }
+    captured: dict[str, object] = {}
+
+    monkeypatch.setattr("visualizer.gui.main_window.StateManager.load", lambda _self: saved_state)
+
+    def _capture_save(_self, state: dict) -> None:
+        captured["state"] = state
+
+    monkeypatch.setattr("visualizer.gui.main_window.StateManager.save", _capture_save)
+
+    window = MainWindow(data_dir=None, cards_dir=None)
+    window._save_state()  # type: ignore[attr-defined]
+
+    persisted = captured["state"]
+    assert isinstance(persisted, dict)
+    recent = persisted.get("recent_sessions")
+    assert isinstance(recent, list)
+    assert len(recent) >= 2
+    assert recent[0]["data_dir"] == str(data_a.resolve())
+    assert any(entry.get("data_dir") == str(data_b.resolve()) for entry in recent)

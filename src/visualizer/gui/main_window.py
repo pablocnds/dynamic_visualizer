@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from importlib import resources
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from PySide6 import QtCore, QtGui, QtWidgets
 import pyqtgraph as pg
@@ -23,6 +23,8 @@ from visualizer.viz.registry import get_default_registry
 
 
 class MainWindow(QtWidgets.QMainWindow):
+    _MAX_RECENT_SESSIONS = 12
+
     def __init__(self, data_dir: Path | None, cards_dir: Path | None = None) -> None:
         super().__init__()
         self.setWindowTitle("Dynamic Visualizer")
@@ -62,6 +64,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._loaded_files_group: QtWidgets.QGroupBox | None = None
         self._loaded_files_list: QtWidgets.QListWidget | None = None
         self._toggle_sidebar_action: QtGui.QAction | None = None
+        self._recent_sessions_menu: QtWidgets.QMenu | None = None
         self._visualization_action_group: QtGui.QActionGroup | None = None
         self._sidebar_mode = "data"
         self._sidebar_icon_expand: QtGui.QIcon | None = None
@@ -69,6 +72,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._up_shortcut: QtWidgets.QShortcut | None = None
         self._down_shortcut: QtWidgets.QShortcut | None = None
         self._pending_data_file: Path | None = None
+        self._recent_sessions: List[Dict[str, Any]] = []
 
         self._build_ui()
         self._apply_theme()
@@ -182,6 +186,8 @@ class MainWindow(QtWidgets.QMainWindow):
         open_card_action = QtGui.QAction("Open Card File…", self)
         open_card_action.triggered.connect(self._handle_choose_card_file)
         file_menu.addAction(open_card_action)
+        self._recent_sessions_menu = file_menu.addMenu("Open Previous Session")
+        self._refresh_recent_sessions_menu()
 
         file_menu.addSeparator()
         exit_action = QtGui.QAction("Quit", self)
@@ -215,6 +221,201 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self._visualization_action_group.triggered.connect(self._handle_visualization_action)
 
+    def _refresh_recent_sessions_menu(self) -> None:
+        if not self._recent_sessions_menu:
+            return
+        self._recent_sessions = self._sanitize_recent_sessions(self._recent_sessions)
+        menu = self._recent_sessions_menu
+        menu.clear()
+        if not self._recent_sessions:
+            action = menu.addAction("No previous sessions")
+            action.setEnabled(False)
+            return
+        for index, session in enumerate(self._recent_sessions):
+            action = menu.addAction(self._session_label(session))
+            action.triggered.connect(
+                lambda _checked=False, idx=index: self._open_recent_session(idx)
+            )
+        menu.addSeparator()
+        clear_action = menu.addAction("Clear History")
+        clear_action.triggered.connect(self._clear_recent_sessions)
+
+    def _clear_recent_sessions(self) -> None:
+        self._recent_sessions = []
+        self._refresh_recent_sessions_menu()
+        state = self._current_session_snapshot()
+        state["recent_sessions"] = []
+        self._state_manager.save(state)
+
+    def _session_label(self, session: Dict[str, Any]) -> str:
+        card_file = session.get("card_file")
+        if isinstance(card_file, str):
+            path = Path(card_file)
+            return f"Card: {path.name} ({self._format_path(path.parent)})"
+        card_dir = session.get("card_dir")
+        if isinstance(card_dir, str):
+            return f"Cards: {self._format_path(Path(card_dir))}"
+        data_dir = session.get("data_dir")
+        if isinstance(data_dir, str):
+            return f"Data: {self._format_path(Path(data_dir))}"
+        data_file = session.get("data_file")
+        if isinstance(data_file, str):
+            path = Path(data_file)
+            return f"File: {path.name} ({self._format_path(path.parent)})"
+        return "Previous Session"
+
+    def _open_recent_session(self, index: int) -> None:
+        if index < 0 or index >= len(self._recent_sessions):
+            return
+        normalized = self._normalize_session_entry(self._recent_sessions[index])
+        if not normalized:
+            self._recent_sessions = self._sanitize_recent_sessions(self._recent_sessions)
+            self._refresh_recent_sessions_menu()
+            self._set_status_message("Selected previous session is no longer available.")
+            return
+        self._apply_session_snapshot(normalized)
+        self._remember_recent_session(normalized)
+        self._refresh_recent_sessions_menu()
+        self._set_status_message("Loaded previous session.")
+
+    def _apply_session_snapshot(self, snapshot: Dict[str, Any]) -> None:
+        self._clear_card_selection()
+        self._reset_data_state()
+        self._data_dir = None
+        self._cards_dir = None
+        self._controller.set_cards_dir(None)
+        self._card_loader = self._controller.card_loader
+        self._card_list.clear()
+        self._pending_card_file = None
+        self._pending_data_file = None
+        self._added_files.clear()
+
+        self._restore_snapshot_fields(snapshot)
+        self._load_initial_sources()
+        self._sync_initial_view_state()
+        self._update_sidebar_mode()
+
+    def _restore_snapshot_fields(self, snapshot: Dict[str, Any]) -> None:
+        data_dir = snapshot.get("data_dir")
+        card_file = snapshot.get("card_file")
+        card_dir = snapshot.get("card_dir")
+        data_file = snapshot.get("data_file")
+        added_files = snapshot.get("added_files", [])
+        if isinstance(data_dir, str):
+            path = Path(data_dir)
+            if path.exists():
+                self._data_dir = path
+        if isinstance(added_files, list):
+            for file_path in added_files:
+                if not isinstance(file_path, str):
+                    continue
+                path = Path(file_path)
+                if path.exists():
+                    self._added_files.add(path)
+        card_file_restored = False
+        if isinstance(card_file, str):
+            path = Path(card_file)
+            if path.exists():
+                self._pending_card_file = path
+                self._set_card_loader(path.parent, select_card=path)
+                card_file_restored = True
+        if not card_file_restored and isinstance(card_dir, str):
+            path = Path(card_dir)
+            if path.exists() and path.is_dir():
+                self._set_card_loader(path)
+        if isinstance(data_file, str):
+            path = Path(data_file)
+            if path.exists():
+                self._pending_data_file = path
+
+    def _remember_recent_session(self, session: Dict[str, Any]) -> None:
+        if not session:
+            return
+        sessions = [session]
+        incoming_key = self._session_key(session)
+        for existing in self._recent_sessions:
+            if self._session_key(existing) == incoming_key:
+                continue
+            sessions.append(existing)
+            if len(sessions) >= self._MAX_RECENT_SESSIONS:
+                break
+        self._recent_sessions = sessions
+
+    def _session_key(self, session: Dict[str, Any]) -> tuple:
+        return (
+            session.get("data_dir"),
+            session.get("data_file"),
+            session.get("card_dir"),
+            session.get("card_file"),
+            tuple(session.get("added_files", [])) if isinstance(session.get("added_files"), list) else (),
+        )
+
+    def _sanitize_recent_sessions(self, entries: object) -> List[Dict[str, Any]]:
+        if not isinstance(entries, list):
+            return []
+        sanitized: List[Dict[str, Any]] = []
+        seen: set[tuple] = set()
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            normalized = self._normalize_session_entry(entry)
+            if not normalized:
+                continue
+            key = self._session_key(normalized)
+            if key in seen:
+                continue
+            seen.add(key)
+            sanitized.append(normalized)
+            if len(sanitized) >= self._MAX_RECENT_SESSIONS:
+                break
+        return sanitized
+
+    def _normalize_session_entry(self, entry: Dict[str, Any]) -> Dict[str, Any] | None:
+        normalized: Dict[str, Any] = {}
+
+        data_dir = entry.get("data_dir")
+        if isinstance(data_dir, str):
+            path = Path(data_dir).expanduser().resolve()
+            if path.is_dir() and self._repository.list_datasets(path):
+                normalized["data_dir"] = str(path)
+
+        data_file = entry.get("data_file")
+        if isinstance(data_file, str):
+            path = Path(data_file).expanduser().resolve()
+            if path.is_file():
+                normalized["data_file"] = str(path)
+
+        card_file = entry.get("card_file")
+        if isinstance(card_file, str):
+            path = Path(card_file).expanduser().resolve()
+            if path.is_file():
+                normalized["card_file"] = str(path)
+
+        card_dir = entry.get("card_dir")
+        if isinstance(card_dir, str):
+            path = Path(card_dir).expanduser().resolve()
+            if path.is_dir() and any(path.glob("*.toml")):
+                normalized["card_dir"] = str(path)
+
+        added_files = entry.get("added_files", [])
+        if isinstance(added_files, list):
+            valid_added = []
+            for raw in added_files:
+                if not isinstance(raw, str):
+                    continue
+                path = Path(raw).expanduser().resolve()
+                if path.is_file():
+                    valid_added.append(str(path))
+            if valid_added:
+                normalized["added_files"] = valid_added
+
+        if "card_file" in normalized and "card_dir" not in normalized:
+            normalized["card_dir"] = str(Path(normalized["card_file"]).parent)
+
+        if not normalized:
+            return None
+        return normalized
+
     def _load_initial_sources(self) -> None:
         self._load_cards()
         if self._data_dir:
@@ -244,6 +445,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self._set_warning(None)
         self._update_sidebar_mode()
         self._update_loaded_files()
+        self._refresh_recent_sessions_menu()
 
     def _sync_initial_view_state(self) -> None:
         if self._pending_card_file:
@@ -624,51 +826,38 @@ class MainWindow(QtWidgets.QMainWindow):
         self._update_sidebar_mode()
 
     def _restore_state(self) -> None:
-        data_dir = self._saved_state.get("data_dir")
-        card_file = self._saved_state.get("card_file")
-        card_dir = self._saved_state.get("card_dir")
-        data_file = self._saved_state.get("data_file")
-        added_files = self._saved_state.get("added_files", [])
-        if data_dir:
-            path = Path(data_dir)
-            if path.exists():
-                self._data_dir = path
-        for file_path in added_files:
-            path = Path(file_path)
-            if path.exists():
-                self._added_files.add(path)
-        card_file_restored = False
-        if card_file:
-            path = Path(card_file)
-            if path.exists():
-                self._pending_card_file = path
-                self._set_card_loader(path.parent, select_card=path)
-                card_file_restored = True
-        if not card_file_restored and card_dir:
-            path = Path(card_dir)
-            if path.exists() and path.is_dir():
-                self._set_card_loader(path)
-        if data_file:
-            path = Path(data_file)
-            if path.exists():
-                self._pending_data_file = path
+        self._recent_sessions = self._sanitize_recent_sessions(
+            self._saved_state.get("recent_sessions", [])
+        )
+        current_snapshot = self._normalize_session_entry(self._saved_state)
+        if current_snapshot:
+            self._restore_snapshot_fields(current_snapshot)
+            self._remember_recent_session(current_snapshot)
 
     def _save_state(self) -> None:
-        state = {}
+        state = self._current_session_snapshot()
+        self._remember_recent_session(state)
+        state["recent_sessions"] = self._recent_sessions
+        self._refresh_recent_sessions_menu()
+        self._state_manager.save(state)
+
+    def _current_session_snapshot(self) -> Dict[str, Any]:
+        snapshot: Dict[str, Any] = {}
         if self._data_dir and self._data_dir.exists():
-            state["data_dir"] = str(self._data_dir.resolve())
+            snapshot["data_dir"] = str(self._data_dir.resolve())
         if self._current_path and self._current_path.exists():
-            state["data_file"] = str(self._current_path.resolve())
+            snapshot["data_file"] = str(self._current_path.resolve())
         if self._active_card_path and self._active_card_path.exists():
-            state["card_file"] = str(self._active_card_path.resolve())
+            snapshot["card_file"] = str(self._active_card_path.resolve())
         elif self._pending_card_file and self._pending_card_file.exists():
-            state["card_file"] = str(self._pending_card_file.resolve())
+            snapshot["card_file"] = str(self._pending_card_file.resolve())
         if self._cards_dir and self._cards_dir.exists():
-            state["card_dir"] = str(self._cards_dir.resolve())
+            snapshot["card_dir"] = str(self._cards_dir.resolve())
         extras = [str(path.resolve()) for path in self._added_files if path.exists()]
         if extras:
-            state["added_files"] = extras
-        self._state_manager.save(state)
+            snapshot["added_files"] = extras
+        normalized = self._normalize_session_entry(snapshot)
+        return normalized or {}
 
     def _load_and_render(self, path: Path, card_style: ChartStyle | None = None) -> None:
         try:

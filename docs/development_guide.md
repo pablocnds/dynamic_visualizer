@@ -14,7 +14,7 @@ Desktop GUI (PySide6 + PyQtGraph) that loads JSON data, infers sensible defaults
 - **Visualization:** `PlotRenderer` draws single or multiple specs on PyQtGraph widgets, including line/scatter/stick 2-D series plus 1-D colormap strips, event lines, and range bands; `TableRenderer` handles tabular views with configurable palette/range rules.
 - **Controller/orchestration:** `SessionController` owns card loading, matching, selection, and panel planning (including overlay expansion). `MainWindow` handles only the PySide6 widgets and delegates data/card logic to the controller.
 - **State persistence:** `StateManager` keeps last-used data/card paths and a recent-session history. Startup restores the current session snapshot, and File > Open Previous Session can reopen remembered snapshots. Entries with removed paths or empty data/card folders are pruned automatically.
-- **Cards:** Parsed by `CardLoader`; `CardSession` resolves variables, enforces pivot for multi-variable cards, supports subcards and overlays. `chart_style` now supports structured styles (`{ name = \"line\", ... }`) that flow through to the visualization registry; defaults cascade: per-series → subcard → global. `overlay_variable` lets overlays auto-enumerate series (e.g., multiple fragments) without exposing them as selectable variables. When the default alphabetical variable pick forms an invalid combination, selection now auto-recovers to the closest discovered match. When `chart_style` is explicitly set, the dataset must be compatible (range data requires `ranges`; table data cannot declare a chart style); when omitted, panels can switch between table and plot data.
+- **Cards:** Parsed by `CardLoader`; `CardSession` resolves variables, enforces pivot for multi-variable cards, supports subcards and overlays. `chart_style` supports structured styles (`{ name = \"line\", ... }`) with style-specific argument validation (unknown args fail early); defaults cascade: per-series → subcard → global. `overlay_variable` lets overlays auto-enumerate series (e.g., multiple fragments) without exposing them as selectable variables. When the default alphabetical variable pick forms an invalid combination, selection auto-recovers to the closest discovered match. When `chart_style` is explicitly set, the dataset must be compatible (range data requires `ranges`; table data cannot declare a chart style); when omitted, panels can switch between table and plot data.
 - **Axes:** Cards can control axis visibility with `show_x_axis`/`show_y_axis` (global or per subcard). With `synchronize_axis = true`, X axes are hidden by default unless explicitly enabled.
 
 ## Data Contracts
@@ -24,7 +24,7 @@ Desktop GUI (PySide6 + PyQtGraph) that loads JSON data, infers sensible defaults
 - `data.kind` is optional (`series`, `table`, or `ranges`); when omitted the loader auto-detects based on the available fields.
 - CSV is temporarily disabled and will return in a future update.
 
-## Card Rules (see `docs/card_specification.md`)
+## Card Rules (see `docs/card_specification.md` and `docs/cards_reference.md`)
 - Variables (`{{VAR}}`) are single-level components discovered from directory/file names. Wildcards (`*`) are plain globs and not exposed as variables.
 - `pivot_chart` is optional; when omitted, cards default to the first discovered variable (alphabetical).
 - Subcards may set `chart_height` and `chart_style`; overlays accept arrays for `filepath`/`chart_style`, optional per-series labels, and fall back to the global style when unspecified. Variable-level regex filters apply to overlays too.
@@ -35,4 +35,3 @@ Desktop GUI (PySide6 + PyQtGraph) that loads JSON data, infers sensible defaults
 - Expand interpreters/renderers beyond line/scatter/stick (e.g., boolean/heat maps).
 - Broaden validation and error surfacing in the GUI (e.g., schema path display, missing files per panel).
 - Grow test coverage across GUI callbacks and additional card scenarios.
-- TODO: allow table cell color maps to be customized via card configuration (numeric/boolean/other palettes).

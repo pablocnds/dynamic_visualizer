@@ -1,16 +1,23 @@
 # Card Specification
 
 TOML cards describe where to find datasets and how to render them. Variables are single path components discovered automatically so users can cycle through data without manual file picking.
+For a concise template-oriented guide, see `docs/cards_reference.md`.
 
 ## Core Concepts
 - `<CARD_DIR>`: directory containing the card; paths are resolved relative to it.
 - Variables: `{{VAR}}` placeholders replace exactly one directory or filename segment and default to the first alphabetical value. If those defaults do not form a valid discovered combination, the session automatically snaps to the closest valid match. Use named variables even when only one exists; a pivot is optional when there is only one variable.
 - Wildcard (`*`): plain glob segment only; it is not a variable and never exposed in the UI.
 - Pivot: `pivot_chart = "{{VAR}}"` identifies which variable cycles when moving prev/next. If omitted, the first discovered variable (alphabetical) is used.
-- Styles: `chart_style` accepts `line`, `scatter`, `stick`, `colormap` (1-D heatmap strip), `eventline` (1-D spike/event line), or `ranges` (1-D range bands). You can use the string shorthand (`"line"`) or an object with a `name` and optional parameters, e.g. `chart_style = { name = "line", width = 3 }`, `chart_style = { name = "stick", color = "#0f4c81", line_width = 1.25 }`, or `chart_style = { name = "ranges", palette = "cividis", alpha = 0.25 }`. Subcards and overlays may override it; missing overrides fall back to the card’s global style. One-dimensional plots can overlay with each other or with 2-D plots; in mixed overlays, 1-D data renders behind the 2-D plot with transparency. Stick plots draw vertical lines from `y=0` to each point's `y` value and preserve X spacing/order from the data. Eventline plots ignore Y values (when omitted they default to 1s). Aliases are accepted: `colormap_line`/`heatmap1d` → `colormap`, `events`/`spikes` → `eventline`, `range` → `ranges`. Table datasets render as tables when no `chart_style` is specified; if a `chart_style` is set, the dataset must be compatible (table data with a chart style is rejected).
-- Range style params: `palette` (colormap name), `colors` (explicit list of colors), and `alpha` (0-1 or 0-255). When both `palette` and `colors` are provided, `colors` wins.
+- Styles: `chart_style` accepts `line`, `scatter`, `stick`, `colormap` (1-D heatmap strip), `eventline` (1-D spike/event line), or `ranges` (1-D range bands). You can use the string shorthand (`"line"`) or an object with a `name` and style-specific parameters, e.g. `chart_style = { name = "line", width = 3 }`, `chart_style = { name = "stick", color = "#0f4c81", line_width = 1.25 }`, or `chart_style = { name = "ranges", palette = "cividis", alpha = 0.25 }`. Subcards and overlays may override it; missing overrides fall back to the card’s global style. One-dimensional plots can overlay with each other or with 2-D plots; in mixed overlays, 1-D data renders behind the 2-D plot with transparency. Stick plots draw vertical lines from `y=0` to each point's `y` value and preserve X spacing/order from the data. Eventline plots ignore Y values (when omitted they default to 1s). Aliases are accepted: `colormap_line`/`heatmap1d` → `colormap`, `events`/`spikes` → `eventline`, `range` → `ranges`. Table datasets render as tables when no `chart_style` is specified; if a `chart_style` is set, the dataset must be compatible (table data with a chart style is rejected).
+- Style args are validated at load time; unsupported/typo keys fail with a clear error instead of being silently ignored.
+- Style args by chart type:
+  - `line`: `color`, `alpha`, `line_width`/`width`
+  - `scatter`: `color`, `alpha`, `marker_size`/`size`
+  - `stick`: `color`, `alpha`, `line_width`/`width`
+  - `colormap`: `palette`, `alpha`
+  - `eventline`: `color`, `palette`, `alpha`
+  - `ranges`: `colors`, `palette`, `alpha` (`colors` wins over `palette` when both are set)
 - Range hover info: range datasets can provide `data.range_info` in JSON (one entry per range). Those values are shown on mouse hover and work in standalone range charts and overlays.
-- Stick style params: `color`, `line_width` (or `width`), and `alpha` (0-1 or 0-255).
 - Synchronization: compound cards may set `synchronize_axis = true` under `[global]` to link the X axis across panels (panning/zooming one updates the others).
 - Axis visibility: `show_x_axis` and `show_y_axis` can be set globally or per subcard to explicitly show/hide axes for plot panels. When `synchronize_axis = true`, X axes are hidden by default unless explicitly enabled. `show_x_axis` controls the 1-D top overlay axis as well as the 2-D bottom axis; `show_y_axis` applies only to 2-D plots.
 - Table style: optional `table_style = { palette = "...", range = [min, max] }` can be set globally or per subcard for table datasets. JSON row/column table style overrides still take precedence over this card-level global fallback.

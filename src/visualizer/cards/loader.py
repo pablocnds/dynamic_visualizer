@@ -17,6 +17,7 @@ from .models import (
     SeriesDefinition,
 )
 from .utils import _template_to_glob, _template_to_regex
+from visualizer.table_style import TableColorRule, parse_table_color_rule
 
 MAX_MATCHES = 1000
 VAR_PATTERN = re.compile(r"{{\s*([A-Za-z0-9_]+)\s*}}")
@@ -41,6 +42,10 @@ class CardLoader:
             filepath_template = data.get("card", {}).get("filepath")
         chart_style_raw = _resolve_card_option(data, global_section, "chart_style")
         chart_style = _maybe_first_style(chart_style_raw)
+        table_style = _parse_table_style(
+            _resolve_card_option(data, global_section, "table_style"),
+            context=f"{path} table_style",
+        )
         pivot = _resolve_card_option(data, global_section, "pivot_chart")
         synchronize_axis = bool(global_section.get("synchronize_axis", False))
         show_x_axis = _parse_optional_bool(_resolve_card_option(data, global_section, "show_x_axis"))
@@ -98,6 +103,10 @@ class CardLoader:
                         filepath_template=str(match_template),
                         variables=_remove_overlay_variable(extracted_vars, overlay_var),
                         chart_style=_maybe_first_style(config.get("chart_style")),
+                        table_style=_parse_table_style(
+                            config.get("table_style"),
+                            context=f"{path} subcards.{name}.table_style",
+                        ),
                         chart_height=_parse_chart_height(config.get("chart_height")),
                         filepaths=filepaths,
                         overlay_variable=overlay_var,
@@ -135,6 +144,7 @@ class CardLoader:
                         filepath_template=template,
                         variables=_remove_overlay_variable(extracted_vars, overlay_var),
                         chart_style=_maybe_first_style(chart_style),
+                        table_style=table_style,
                         filepaths=filepaths,
                         overlay_variable=overlay_var,
                         show_x_axis=show_x_axis,
@@ -149,6 +159,7 @@ class CardLoader:
                         filepath_template=template,
                         variables=_extract_variables(template),
                         chart_style=_maybe_first_style(chart_style),
+                        table_style=table_style,
                         filepaths=[template],
                         overlay_variable=None,
                         show_x_axis=show_x_axis,
@@ -172,6 +183,7 @@ class CardLoader:
             subcards=tuple(subcards),
             variables=tuple(all_variables),
             chart_style=chart_style,
+            table_style=table_style,
             pivot_variable=normalized_pivot,
             overlay_panels=overlay_panels,
             variable_filters=variable_filters,
@@ -244,6 +256,13 @@ def _normalize_variable(value: object | None) -> str | None:
     if text.startswith("{{") and text.endswith("}}"):
         text = text[2:-2].strip()
     return text or None
+
+
+def _parse_table_style(value: object | None, *, context: str) -> TableColorRule | None:
+    try:
+        return parse_table_color_rule(value, context=context)
+    except ValueError as exc:
+        raise ValueError(str(exc)) from exc
 
 
 def _resolve_card_option(data: dict, global_section: dict, key: str) -> object | None:

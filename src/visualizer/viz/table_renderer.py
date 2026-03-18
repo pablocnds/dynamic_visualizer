@@ -6,6 +6,20 @@ from typing import Callable
 from PySide6 import QtCore, QtGui, QtWidgets
 
 from visualizer.interpretation.specs import TableSpec
+from visualizer.table_style import TableColorConfig
+
+
+_DEFAULT_NUMERIC_PALETTE = (
+    QtGui.QColor(230, 245, 255),
+    QtGui.QColor(8, 88, 158),
+)
+_NAMED_NUMERIC_PALETTES = {
+    "blue": _DEFAULT_NUMERIC_PALETTE,
+    "viridis": (QtGui.QColor(68, 1, 84), QtGui.QColor(253, 231, 37)),
+    "plasma": (QtGui.QColor(13, 8, 135), QtGui.QColor(240, 249, 33)),
+    "cividis": (QtGui.QColor(0, 34, 78), QtGui.QColor(253, 231, 55)),
+    "magma": (QtGui.QColor(0, 0, 4), QtGui.QColor(252, 253, 191)),
+}
 
 
 class TableModel(QtCore.QAbstractTableModel):
@@ -15,6 +29,7 @@ class TableModel(QtCore.QAbstractTableModel):
         self._rows = [list(row) for row in spec.content]
         self._row_names = [str(name) for name in spec.row_names]
         self._column_names = [str(name) for name in spec.column_names]
+        self._table_style = spec.table_style or TableColorConfig()
         self._column_ranges = self._compute_column_ranges()
 
     def rowCount(self, parent: QtCore.QModelIndex = QtCore.QModelIndex()) -> int:  # noqa: B008
@@ -31,11 +46,11 @@ class TableModel(QtCore.QAbstractTableModel):
             return "" if value is None else str(value)
         if role == QtCore.Qt.BackgroundRole:
             value = self._rows[index.row()][index.column()]
-            brush = self._background_brush(value, index.column())
+            brush = self._background_brush(value, index.row(), index.column())
             return brush
         if role == QtCore.Qt.ForegroundRole:
             value = self._rows[index.row()][index.column()]
-            brush = self._foreground_brush(value, index.column())
+            brush = self._foreground_brush(value, index.row(), index.column())
             return brush
         return None
 
@@ -92,34 +107,70 @@ class TableModel(QtCore.QAbstractTableModel):
             return None
         return numeric
 
-    def _background_brush(self, value: object, column: int) -> QtGui.QBrush | None:
-        color = self._background_color(value, column)
+    def _background_brush(self, value: object, row: int, column: int) -> QtGui.QBrush | None:
+        color = self._background_color(value, row, column)
         if color is None:
             return None
         return QtGui.QBrush(color)
 
-    def _foreground_brush(self, value: object, column: int) -> QtGui.QBrush | None:
-        color = self._background_color(value, column)
+    def _foreground_brush(self, value: object, row: int, column: int) -> QtGui.QBrush | None:
+        color = self._background_color(value, row, column)
         if color is None:
             return None
         luminance = (0.299 * color.red() + 0.587 * color.green() + 0.114 * color.blue())
         text_color = QtGui.QColor(20, 20, 20) if luminance > 140 else QtGui.QColor(250, 250, 250)
         return QtGui.QBrush(text_color)
 
-    def _background_color(self, value: object, column: int) -> QtGui.QColor | None:
+    def _background_color(self, value: object, row: int, column: int) -> QtGui.QColor | None:
         if isinstance(value, bool):
             if value:
                 return QtGui.QColor(198, 239, 206)
             return QtGui.QColor(255, 199, 206)
         numeric = self._coerce_numeric(value)
         if numeric is not None:
-            min_val, max_val = self._column_ranges[column] if column < len(self._column_ranges) else (None, None)
-            return self._numeric_color(numeric, min_val, max_val)
+            minimum, maximum, palette = self._resolved_numeric_style(row=row, column=column)
+            return self._numeric_color(numeric, minimum, maximum, palette)
         if value is None:
             return None
         return QtGui.QColor(235, 235, 235)
 
-    def _numeric_color(self, value: float, minimum: float | None, maximum: float | None) -> QtGui.QColor:
+    def _resolved_numeric_style(
+        self, row: int, column: int
+    ) -> tuple[float | None, float | None, str | None]:
+        min_val, max_val = self._column_ranges[column] if column < len(self._column_ranges) else (None, None)
+        palette = None
+        rule = self._table_style.global_rule
+        if rule:
+            if rule.value_range is not None:
+                min_val, max_val = rule.value_range
+            if rule.palette is not None:
+                palette = rule.palette
+
+        if column < len(self._table_style.column_rules):
+            col_rule = self._table_style.column_rules[column]
+            if col_rule:
+                if col_rule.value_range is not None:
+                    min_val, max_val = col_rule.value_range
+                if col_rule.palette is not None:
+                    palette = col_rule.palette
+
+        if row < len(self._table_style.row_rules):
+            row_rule = self._table_style.row_rules[row]
+            if row_rule:
+                if row_rule.value_range is not None:
+                    min_val, max_val = row_rule.value_range
+                if row_rule.palette is not None:
+                    palette = row_rule.palette
+
+        return min_val, max_val, palette
+
+    def _numeric_color(
+        self,
+        value: float,
+        minimum: float | None,
+        maximum: float | None,
+        palette: str | None,
+    ) -> QtGui.QColor:
         if minimum is None or maximum is None:
             return QtGui.QColor(235, 235, 235)
         if maximum == minimum:
@@ -127,12 +178,17 @@ class TableModel(QtCore.QAbstractTableModel):
         else:
             t = (value - minimum) / (maximum - minimum)
         t = max(0.0, min(1.0, t))
-        low = QtGui.QColor(230, 245, 255)
-        high = QtGui.QColor(8, 88, 158)
+        low, high = self._palette_endpoints(palette)
         r = low.red() + (high.red() - low.red()) * t
         g = low.green() + (high.green() - low.green()) * t
         b = low.blue() + (high.blue() - low.blue()) * t
         return QtGui.QColor(int(r), int(g), int(b))
+
+    def _palette_endpoints(self, palette: str | None) -> tuple[QtGui.QColor, QtGui.QColor]:
+        if not palette:
+            return _DEFAULT_NUMERIC_PALETTE
+        key = str(palette).strip().lower()
+        return _NAMED_NUMERIC_PALETTES.get(key, _DEFAULT_NUMERIC_PALETTE)
 
 
 class TableView(QtWidgets.QTableView):

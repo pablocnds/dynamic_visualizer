@@ -11,7 +11,7 @@ Desktop GUI (PySide6 + PyQtGraph) that loads JSON data, infers sensible defaults
 ## Architecture Snapshot
 - **Data access:** `DatasetRepository` loads JSON with length/number validation, coerces types, caches by path+mtime. JSON payloads are schema-validated when `jsonschema` is installed. Dataset discovery is recursive when a folder is chosen.
 - **Interpretation:** `DefaultInterpreter` maps series datasets to `PlotSpec` and table datasets to `TableSpec`, infers line vs scatter (monotonic numeric X → line), and sorts X/Y for line plots.
-- **Visualization:** `PlotRenderer` draws single or multiple specs on PyQtGraph widgets, including line/scatter/stick 2-D series plus 1-D colormap strips, event lines, and range bands; `TableRenderer` handles tabular views.
+- **Visualization:** `PlotRenderer` draws single or multiple specs on PyQtGraph widgets, including line/scatter/stick 2-D series plus 1-D colormap strips, event lines, and range bands; `TableRenderer` handles tabular views with configurable palette/range rules.
 - **Controller/orchestration:** `SessionController` owns card loading, matching, selection, and panel planning (including overlay expansion). `MainWindow` handles only the PySide6 widgets and delegates data/card logic to the controller.
 - **State persistence:** `StateManager` keeps last-used data/card paths; startup restores the previous card directory even when the previously selected card file no longer exists.
 - **Cards:** Parsed by `CardLoader`; `CardSession` resolves variables, enforces pivot for multi-variable cards, supports subcards and overlays. `chart_style` now supports structured styles (`{ name = \"line\", ... }`) that flow through to the visualization registry; defaults cascade: per-series → subcard → global. `overlay_variable` lets overlays auto-enumerate series (e.g., multiple fragments) without exposing them as selectable variables. When the default alphabetical variable pick forms an invalid combination, selection now auto-recovers to the closest discovered match. When `chart_style` is explicitly set, the dataset must be compatible (range data requires `ranges`; table data cannot declare a chart style); when omitted, panels can switch between table and plot data.
@@ -19,7 +19,7 @@ Desktop GUI (PySide6 + PyQtGraph) that loads JSON data, infers sensible defaults
 
 ## Data Contracts
 - JSON series: must match `src/visualizer/schema/data_payload.schema.json` (`data.x_axis` required; optional `data.y_axis` must match length when present); non-numeric Y is rejected; labels are optional. Eventline plots ignore `data.y_axis`.
-- JSON tables: use `data.column_names`/`data.row_names` with a row-major `data.content` matrix; lengths must match.
+- JSON tables: use `data.column_names`/`data.row_names` with a row-major `data.content` matrix; lengths must match. Optional `data.table_style` can define a global rule plus row/column overrides (row/column arrays must match table dimensions exactly).
 - JSON ranges: use `data.ranges` as an array of `[start, end]` pairs (numeric); labels are optional; use `data.kind = "ranges"` to avoid warnings (legacy `data.kind = "range"` still loads with a warning).
 - `data.kind` is optional (`series`, `table`, or `ranges`); when omitted the loader auto-detects based on the available fields.
 - CSV is temporarily disabled and will return in a future update.

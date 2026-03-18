@@ -1,0 +1,26 @@
+{
+  "dataset": "table_metrics",
+  "data": {
+    "kind": "table",
+    "column_names": ["accuracy", "latency_ms", "throughput"],
+    "row_names": ["baseline", "exp_a", "exp_b"],
+    "content": [
+      [81.2, 24.0, 210.0],
+      [84.5, 31.0, 190.0],
+      [88.0, 26.0, 230.0]
+    ],
+    "table_style": {
+      "global": { "palette": "viridis", "range": [0, 100] },
+      "rows": [
+        null,
+        { "palette": "plasma" },
+        null
+      ],
+      "columns": [
+        { "range": [0, 100] },
+        { "range": [0, 60] },
+        { "palette": "cividis", "range": [0, 300] }
+      ]
+    }
+  }
+}

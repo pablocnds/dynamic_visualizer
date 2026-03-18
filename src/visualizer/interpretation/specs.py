@@ -5,6 +5,7 @@ from enum import Enum
 from typing import Any, Sequence
 
 from visualizer.data.models import DataPayload, Dataset, RangeDataset, TableDataset
+from visualizer.table_style import TableColorConfig, TableColorRule, merge_table_color_config
 
 
 class VisualizationType(str, Enum):
@@ -59,6 +60,7 @@ class TableSpec:
     column_names: Sequence[float | str | bool]
     row_names: Sequence[float | str | bool]
     content: Sequence[Sequence[float | str | bool]]
+    table_style: TableColorConfig | None = None
 
     def cache_key(self) -> tuple:
         return (
@@ -67,6 +69,7 @@ class TableSpec:
             tuple(self.column_names),
             tuple(self.row_names),
             tuple(tuple(row) for row in self.content),
+            self.table_style.cache_key() if self.table_style else None,
         )
 
 
@@ -79,9 +82,14 @@ class DefaultInterpreter:
         override: VisualizationType | None = None,
         label: str | None = None,
         style_params: dict[str, Any] | None = None,
+        table_style_global_override: TableColorRule | None = None,
     ) -> PlotSpec | TableSpec:
         if isinstance(dataset, TableDataset):
-            return self.build_table_spec(dataset, label=label)
+            return self.build_table_spec(
+                dataset,
+                label=label,
+                table_style_global_override=table_style_global_override,
+            )
         if isinstance(dataset, RangeDataset):
             return self.build_range_spec(dataset, override=override, label=label, style_params=style_params)
         return self.build_plot_spec(
@@ -119,13 +127,20 @@ class DefaultInterpreter:
             style_params=style_params,
         )
 
-    def build_table_spec(self, dataset: TableDataset, label: str | None = None) -> TableSpec:
+    def build_table_spec(
+        self,
+        dataset: TableDataset,
+        label: str | None = None,
+        table_style_global_override: TableColorRule | None = None,
+    ) -> TableSpec:
+        merged_style = merge_table_color_config(dataset.table_style, table_style_global_override)
         return TableSpec(
             dataset_id=dataset.identifier,
             label=label or dataset.identifier,
             column_names=list(dataset.column_names),
             row_names=list(dataset.row_names),
             content=[list(row) for row in dataset.content],
+            table_style=merged_style,
         )
 
     def build_range_spec(

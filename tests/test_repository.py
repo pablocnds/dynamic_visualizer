@@ -160,3 +160,57 @@ def test_table_validation_rejects_mismatched_dimensions(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError):
         repo.load(bad_table)
+
+
+def test_table_style_configuration_loads_with_row_column_overrides(tmp_path: Path) -> None:
+    table_path = tmp_path / "styled_table.json"
+    payload = {
+        "dataset": "styled_table",
+        "data": {
+            "column_names": ["a", "b"],
+            "row_names": ["r1", "r2"],
+            "content": [[10, 20], [30, 40]],
+            "table_style": {
+                "global": {"palette": "viridis", "range": [0, 100]},
+                "rows": [None, {"palette": "plasma", "range": [5, 45]}],
+                "columns": [{"range": [0, 50]}, {"palette": "cividis"}],
+            },
+        },
+    }
+    table_path.write_text(json.dumps(payload))
+    repo = DatasetRepository()
+
+    dataset = repo.load(table_path)
+
+    assert isinstance(dataset, TableDataset)
+    assert dataset.table_style is not None
+    assert dataset.table_style.global_rule is not None
+    assert dataset.table_style.global_rule.palette == "viridis"
+    assert dataset.table_style.global_rule.value_range == (0.0, 100.0)
+    assert len(dataset.table_style.row_rules) == 2
+    assert dataset.table_style.row_rules[1] is not None
+    assert dataset.table_style.row_rules[1].palette == "plasma"
+    assert len(dataset.table_style.column_rules) == 2
+    assert dataset.table_style.column_rules[0] is not None
+    assert dataset.table_style.column_rules[0].value_range == (0.0, 50.0)
+
+
+def test_table_style_rejects_row_column_length_mismatches(tmp_path: Path) -> None:
+    table_path = tmp_path / "bad_style_table.json"
+    payload = {
+        "dataset": "bad_style_table",
+        "data": {
+            "column_names": ["a", "b"],
+            "row_names": ["r1", "r2"],
+            "content": [[10, 20], [30, 40]],
+            "table_style": {
+                "rows": [{"palette": "viridis"}],
+                "columns": [{"palette": "plasma"}],
+            },
+        },
+    }
+    table_path.write_text(json.dumps(payload))
+    repo = DatasetRepository()
+
+    with pytest.raises(ValueError, match="data.table_style.rows must contain exactly 2 entries"):
+        repo.load(table_path)

@@ -13,6 +13,7 @@ except ImportError:  # pragma: no cover - optional dependency for schema validat
     jsonschema = None
 
 from .models import DataKind, DataPayload, Dataset, RangeDataset, TableDataset
+from visualizer.table_style import parse_table_color_config
 
 SUPPORTED_EXTENSIONS = (".json",)
 
@@ -155,6 +156,15 @@ class DatasetRepository:
         row_names = self._coerce_sequence(list(data_section.get("row_names") or []))
         raw_content = data_section.get("content") or []
         content = [self._coerce_sequence(list(row)) for row in raw_content]
+        try:
+            table_style = parse_table_color_config(
+                data_section.get("table_style"),
+                row_count=len(row_names),
+                column_count=len(column_names),
+                context=f"{path} data.table_style",
+            )
+        except ValueError as exc:
+            raise ValueError(str(exc)) from exc
 
         return TableDataset(
             identifier=str(payload.get("dataset") or path.stem),
@@ -162,6 +172,7 @@ class DatasetRepository:
             column_names=column_names,
             row_names=row_names,
             content=content,
+            table_style=table_style,
             metadata={k: v for k, v in payload.items() if k != "data"},
         )
 

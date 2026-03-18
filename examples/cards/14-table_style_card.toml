@@ -1,0 +1,8 @@
+# Table style example:
+# - JSON defines global, row, and column color rules.
+# - Card-level table_style acts as global fallback only.
+
+[global]
+table_style = { palette = "magma", range = [0, 120] }
+
+filepath = "<CARD_DIR>/../data/table_study/table_metrics.json"

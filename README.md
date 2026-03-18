@@ -15,7 +15,7 @@ Interactive framework for loading processed analytical datasets (JSON) and rende
 
 ## Data Formats
 - JSON inputs must satisfy `src/visualizer/schema/data_payload.schema.json` (packaged as `visualizer/schema/data_payload.schema.json`).
-- Series data uses `x_axis` with an optional `y_axis`; table data uses `column_names`/`row_names` with a row-major `content` matrix; range data uses `ranges` as `[start, end]` pairs along the X axis.
+- Series data uses `x_axis` with an optional `y_axis`; table data uses `column_names`/`row_names` with a row-major `content` matrix and optional `table_style`; range data uses `ranges` as `[start, end]` pairs along the X axis.
 - `data.kind` is optional (`series`, `table`, or `ranges`); when omitted the loader auto-detects based on the available fields (range payloads warn when `data.kind` is missing).
 - CSV support is temporarily disabled and will return in a future update.
 
@@ -29,6 +29,7 @@ Once the GUI is running, use File > Open Data Folder to list JSON files (recursi
 - Keyboard shortcuts: when a card is selected, use the left/right arrow keys to move to the previous/next visualization. Use up/down arrows to move through the current sidebar list (cards or files), even when the sidebar is collapsed.
 - `5-overlay_card.toml` demonstrates overlaying multiple series in a single chart by supplying arrays in `filepath`/`chart_style` (fully supported; see `docs/card_specification.md`).
 - `13-stick_card.toml` demonstrates a mass-spectrometry-style stick spectrum (`chart_style = { name = "stick", ... }`).
+- `14-table_style_card.toml` demonstrates table color customization with JSON-defined row/column styles and card-level global fallback.
 - Compound cards may optionally set `synchronize_axis = true` in `[global]` to keep X-axes linked and hide redundant axes on upper plots.
 - Cards may set `show_x_axis`/`show_y_axis` globally or per subcard to control axis visibility; with `synchronize_axis = true`, X axes are hidden by default unless explicitly enabled.
 - Card behavior and schema are described in `docs/card_specification.md`.

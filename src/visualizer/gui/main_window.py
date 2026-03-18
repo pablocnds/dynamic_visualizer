@@ -12,6 +12,7 @@ from visualizer.controller import SessionController
 from visualizer.data.models import DataPayload, Dataset, TableDataset
 from visualizer.data.repository import DatasetRepository
 from visualizer.interpretation.specs import DefaultInterpreter, PlotSpec, VisualizationType
+from visualizer.table_style import TableColorRule
 from visualizer.state import StateManager
 from visualizer.gui.layout import MainWindowView
 from visualizer.gui.theme import build_stylesheet
@@ -811,7 +812,7 @@ class MainWindow(QtWidgets.QMainWindow):
         axis_visibility = self._panel_axis_visibility.get(subcard_name, (None, None))
         show_x_axis, show_y_axis = axis_visibility
         if table:
-            self._render_table_panel(table, data or [])
+            self._render_table_panel(subcard_name, table, data or [])
             return
         if not plot:
             return
@@ -855,6 +856,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _render_table_panel(
         self,
+        subcard_name: str,
         view: QtWidgets.QTableView,
         data: List[tuple[Optional[DataPayload], Path, Optional[str], Optional[str]]],
     ) -> None:
@@ -870,8 +872,25 @@ class MainWindow(QtWidgets.QMainWindow):
             view.setModel(None)
             return
         dataset, label = entry
-        spec = self._interpreter.build_table_spec(dataset, label=label)
+        table_style_override = self._resolve_table_style_override(subcard_name)
+        spec = self._interpreter.build_table_spec(
+            dataset,
+            label=label,
+            table_style_global_override=table_style_override,
+        )
         self._table_renderer.render(view, spec)
+
+    def _resolve_table_style_override(self, subcard_name: str) -> TableColorRule | None:
+        session = self._controller.card_session
+        if not session:
+            return None
+        subcard = next(
+            (candidate for candidate in session.definition.subcards if candidate.name == subcard_name),
+            None,
+        )
+        if subcard and subcard.table_style is not None:
+            return subcard.table_style
+        return session.definition.table_style
 
     def _configure_table_pivot_handlers(self) -> None:
         for table in self._panel_manager.table_views():

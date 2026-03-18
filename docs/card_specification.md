@@ -12,6 +12,7 @@ TOML cards describe where to find datasets and how to render them. Variables are
 - Stick style params: `color`, `line_width` (or `width`), and `alpha` (0-1 or 0-255).
 - Synchronization: compound cards may set `synchronize_axis = true` under `[global]` to link the X axis across panels (panning/zooming one updates the others).
 - Axis visibility: `show_x_axis` and `show_y_axis` can be set globally or per subcard to explicitly show/hide axes for plot panels. When `synchronize_axis = true`, X axes are hidden by default unless explicitly enabled. `show_x_axis` controls the 1-D top overlay axis as well as the 2-D bottom axis; `show_y_axis` applies only to 2-D plots.
+- Table style: optional `table_style = { palette = "...", range = [min, max] }` can be set globally or per subcard for table datasets. JSON row/column table style overrides still take precedence over this card-level global fallback.
 - Overlay discovery: `overlay_variable` marks a variable used only for overlay enumeration; it is not user-selectable and is removed from card variables/pivot logic. Variable-level filters (see below) apply to overlay variables as well; optional `overlay_path_filter` (regex on the resolved path) can further constrain entries.
 
 ## Global Section (optional)
@@ -21,6 +22,7 @@ chart_style = "line"
 pivot_chart = "{{CLASS}}"  # optional; defaults to the first discovered variable
 show_x_axis = true
 show_y_axis = true
+table_style = { palette = "viridis", range = [0, 100] }
 ```
 
 ## Simple Card
@@ -51,6 +53,10 @@ show_x_axis = false
 [subcards.scatter]
 chart_style = "scatter"
 filepath = "<CARD_DIR>/../data/.../{{DATASET}}/{{CLASS}}/scatter.json"
+
+[subcards.table_panel]
+filepath = "<CARD_DIR>/../data/.../{{DATASET}}/{{CLASS}}/table.json"
+table_style = { palette = "plasma" }
 ```
 
 ## Overlays

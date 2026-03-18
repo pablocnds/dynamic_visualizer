@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from .utils import _template_to_glob, _template_to_regex
 from visualizer.interpretation.specs import VisualizationType
+from visualizer.table_style import TableColorRule
 from visualizer.viz.registry import get_default_registry
 
 
@@ -20,6 +21,7 @@ class SubcardDefinition:
     filepaths: List[str]
     overlay_variable: Optional[str] = None
     chart_style: Optional["ChartStyle"] = None
+    table_style: TableColorRule | None = None
     chart_height: Optional[float] = None
     show_x_axis: Optional[bool] = None
     show_y_axis: Optional[bool] = None
@@ -31,6 +33,7 @@ class CardDefinition:
     subcards: Tuple[SubcardDefinition, ...]
     variables: Tuple[str, ...]
     chart_style: Optional["ChartStyle"] = None
+    table_style: TableColorRule | None = None
     pivot_variable: Optional[str] = None
     overlay_panels: Dict[str, "OverlayDefinition"] = field(default_factory=dict)
     variable_filters: Dict[str, str] = field(default_factory=dict)

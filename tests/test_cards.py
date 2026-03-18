@@ -144,6 +144,34 @@ show_y_axis = true
     assert definition.subcards[0].show_y_axis is False
 
 
+def test_card_table_style_parses_global_and_subcard_values(tmp_path: Path) -> None:
+    cards_dir = tmp_path / "cards"
+    cards_dir.mkdir(parents=True, exist_ok=True)
+    card_path = cards_dir / "table_style_card.toml"
+    card_path.write_text(
+        """
+[global]
+table_style = { palette = "viridis", range = [0, 100] }
+pivot_chart = "{{CLASS}}"
+
+[subcards.table_panel]
+filepath = "<CARD_DIR>/../data/{{CLASS}}/table.json"
+table_style = { palette = "plasma" }
+"""
+    )
+
+    loader = CardLoader(cards_dir)
+    definition = loader.load_definition(card_path)
+    subcard = definition.subcards[0]
+
+    assert definition.table_style is not None
+    assert definition.table_style.palette == "viridis"
+    assert definition.table_style.value_range == (0.0, 100.0)
+    assert subcard.table_style is not None
+    assert subcard.table_style.palette == "plasma"
+    assert subcard.table_style.value_range is None
+
+
 def test_wildcard_only_cards_require_single_match(tmp_path: Path) -> None:
     cards_dir = tmp_path / "cards"
     data_dir = tmp_path / "data"

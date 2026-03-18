@@ -2,6 +2,7 @@ from pathlib import Path
 
 from visualizer.data.models import Dataset, RangeDataset, TableDataset
 from visualizer.interpretation.specs import DefaultInterpreter, TableSpec, VisualizationType
+from visualizer.table_style import TableColorConfig, TableColorRule
 
 
 def _dataset(values: list[float]) -> Dataset:
@@ -88,3 +89,55 @@ def test_range_spec_builds_from_dataset() -> None:
 
     assert spec.visualization == VisualizationType.RANGE
     assert spec.ranges == [(1.0, 2.0), (3.0, 4.0)]
+
+
+def test_table_spec_merges_global_style_override_as_fallback() -> None:
+    dataset = TableDataset(
+        identifier="table",
+        source_path=Path("dummy"),
+        column_names=["a", "b"],
+        row_names=[1, 2],
+        content=[[10, 20], [30, 40]],
+        table_style=TableColorConfig(
+            global_rule=None,
+            row_rules=(None, TableColorRule(palette="plasma")),
+            column_rules=(TableColorRule(value_range=(0.0, 50.0)), None),
+        ),
+    )
+    interpreter = DefaultInterpreter()
+
+    spec = interpreter.build_table_spec(
+        dataset,
+        table_style_global_override=TableColorRule(palette="viridis", value_range=(0.0, 100.0)),
+    )
+
+    assert spec.table_style is not None
+    assert spec.table_style.global_rule is not None
+    assert spec.table_style.global_rule.palette == "viridis"
+    assert spec.table_style.global_rule.value_range == (0.0, 100.0)
+    assert spec.table_style.row_rules[1] is not None
+    assert spec.table_style.row_rules[1].palette == "plasma"
+    assert spec.table_style.column_rules[0] is not None
+    assert spec.table_style.column_rules[0].value_range == (0.0, 50.0)
+
+
+def test_table_spec_keeps_dataset_global_style_over_card_override() -> None:
+    dataset = TableDataset(
+        identifier="table",
+        source_path=Path("dummy"),
+        column_names=["a"],
+        row_names=[1],
+        content=[[10]],
+        table_style=TableColorConfig(global_rule=TableColorRule(palette="cividis")),
+    )
+    interpreter = DefaultInterpreter()
+
+    spec = interpreter.build_table_spec(
+        dataset,
+        table_style_global_override=TableColorRule(palette="viridis", value_range=(0.0, 100.0)),
+    )
+
+    assert spec.table_style is not None
+    assert spec.table_style.global_rule is not None
+    assert spec.table_style.global_rule.palette == "cividis"
+    assert spec.table_style.global_rule.value_range is None

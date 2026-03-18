@@ -9,9 +9,9 @@ _ALLOWED_ARGS_BY_VISUALIZATION: dict[VisualizationType, tuple[str, ...]] = {
     VisualizationType.LINE: ("color", "alpha", "line_width", "width"),
     VisualizationType.SCATTER: ("color", "alpha", "marker_size", "size"),
     VisualizationType.STICK: ("color", "alpha", "line_width", "width"),
-    VisualizationType.COLORMAP: ("palette", "alpha"),
-    VisualizationType.EVENTLINE: ("color", "palette", "alpha"),
-    VisualizationType.RANGE: ("colors", "palette", "alpha"),
+    VisualizationType.COLORMAP: ("palette", "alpha", "reverse"),
+    VisualizationType.EVENTLINE: ("color", "palette", "alpha", "reverse"),
+    VisualizationType.RANGE: ("colors", "palette", "alpha", "reverse"),
 }
 
 
@@ -44,6 +44,10 @@ def _validate_arg_types(style_name: str, params: Mapping[str, object], *, contex
     alpha = params.get("alpha")
     if alpha is not None and (isinstance(alpha, bool) or not isinstance(alpha, (int, float))):
         raise ValueError(f"{context} chart_style '{style_name}' arg 'alpha' must be numeric")
+
+    reverse = params.get("reverse")
+    if reverse is not None and not isinstance(reverse, bool):
+        raise ValueError(f"{context} chart_style '{style_name}' arg 'reverse' must be boolean")
 
     for key in ("line_width", "width", "marker_size", "size"):
         value = params.get(key)

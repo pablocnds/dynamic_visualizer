@@ -37,9 +37,9 @@ Supported args by style:
 | `line` | `color`, `alpha`, `line_width`/`width` |
 | `scatter` | `color`, `alpha`, `marker_size`/`size` |
 | `stick` | `color`, `alpha`, `line_width`/`width` |
-| `colormap` | `palette`, `alpha` |
-| `eventline` | `color`, `palette`, `alpha` |
-| `ranges` | `colors`, `palette`, `alpha` (`colors` takes precedence) |
+| `colormap` | `palette`, `alpha`, `reverse` |
+| `eventline` | `color`, `palette`, `alpha`, `reverse` |
+| `ranges` | `colors`, `palette`, `alpha`, `reverse` (`colors` takes precedence) |
 
 Aliases:
 - `heatmap1d`, `colormap_line` -> `colormap`
@@ -83,7 +83,7 @@ chart_style = { name = "eventline", color = "#253ca8", alpha = 0.7 }
 [subcards.table]
 chart_height = "30%"
 filepath = "<CARD_DIR>/../data/.../{{DATASET}}/{{CLASS}}/table.json"
-table_style = { palette = "plasma", range = [0, 100] }
+table_style = { palette = "plasma", range = [0, 100], reverse = true }
 ```
 
 ### Overlay from explicit filepath list
@@ -99,7 +99,7 @@ filepath = [
 chart_style = [
   { name = "line", color = "#1f3f8f" },
   { name = "eventline", alpha = 0.75 },
-  { name = "ranges", palette = "cividis", alpha = 0.25 }
+  { name = "ranges", palette = "cividis", alpha = 0.25, reverse = true }
 ]
 series_label = ["Signal", "Events", "Windows"]
 ```
@@ -127,14 +127,14 @@ FRAG = "^[0-9.]+$"
 Card-level table style fallback:
 ```toml
 [global]
-table_style = { palette = "magma", range = [0, 120] }
+table_style = { palette = "magma", range = [0, 120], reverse = true }
 ```
 
 Per-subcard override:
 ```toml
 [subcards.metrics]
 filepath = "<CARD_DIR>/../data/.../metrics.json"
-table_style = { palette = "plasma" }
+table_style = { palette = "plasma", reverse = true }
 ```
 
 Card-level table title via label:
@@ -144,6 +144,7 @@ series_label = "Model Metrics"
 ```
 
 JSON can also provide `data.table_title`, and row/column-specific `data.table_style`.
+- For palette-driven styles, `reverse = true` flips the palette direction without changing the palette name.
 
 ## 6. Behavior Notes
 - If `pivot_chart` is omitted, the first discovered variable (alphabetical) becomes pivot.

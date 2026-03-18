@@ -190,6 +190,27 @@ def test_colormap_style_params_use_custom_palette(app: QtWidgets.QApplication, m
     assert "magma" in seen
 
 
+def test_colormap_lookup_table_reverse_flips_endpoints(app: QtWidgets.QApplication) -> None:
+    renderer = PlotRenderer()
+    cmap = pg.colormap.get("viridis")
+
+    normal_lut = renderer._colormap_lookup_table(  # type: ignore[attr-defined]
+        cmap,
+        npts=8,
+        alpha=255,
+        reverse=False,
+    )
+    reverse_lut = renderer._colormap_lookup_table(  # type: ignore[attr-defined]
+        cmap,
+        npts=8,
+        alpha=255,
+        reverse=True,
+    )
+
+    assert tuple(normal_lut[0]) == tuple(reverse_lut[-1])
+    assert tuple(normal_lut[-1]) == tuple(reverse_lut[0])
+
+
 def test_eventline_style_params_resolve_color_and_alpha(app: QtWidgets.QApplication) -> None:
     renderer = PlotRenderer()
     color = renderer._resolve_eventline_color(  # type: ignore[attr-defined]
@@ -203,6 +224,27 @@ def test_eventline_style_params_resolve_color_and_alpha(app: QtWidgets.QApplicat
     assert color.alpha() == pytest.approx(63, abs=1)
 
 
+def test_eventline_style_params_reverse_palette_changes_color(app: QtWidgets.QApplication) -> None:
+    renderer = PlotRenderer()
+    normal = renderer._resolve_eventline_color(  # type: ignore[attr-defined]
+        {"palette": "plasma", "alpha": 0.6},
+        fallback_color=pg.mkColor(0, 0, 0),
+        fallback_alpha=180,
+    )
+    reverse = renderer._resolve_eventline_color(  # type: ignore[attr-defined]
+        {"palette": "plasma", "alpha": 0.6, "reverse": True},
+        fallback_color=pg.mkColor(0, 0, 0),
+        fallback_alpha=180,
+    )
+
+    assert reverse.alpha() == normal.alpha()
+    assert (reverse.red(), reverse.green(), reverse.blue()) != (
+        normal.red(),
+        normal.green(),
+        normal.blue(),
+    )
+
+
 def test_eventline_style_params_resolve_palette_when_color_missing(app: QtWidgets.QApplication) -> None:
     renderer = PlotRenderer()
     color = renderer._resolve_eventline_color(  # type: ignore[attr-defined]
@@ -213,6 +255,23 @@ def test_eventline_style_params_resolve_palette_when_color_missing(app: QtWidget
 
     assert color.alpha() == pytest.approx(153, abs=1)
     assert (color.red(), color.green(), color.blue()) != (0, 0, 0)
+
+
+def test_range_palette_reverse_flips_color_order(app: QtWidgets.QApplication) -> None:
+    renderer = PlotRenderer()
+    normal = renderer._resolve_range_colors(  # type: ignore[attr-defined]
+        3,
+        {"palette": "viridis"},
+        180,
+    )
+    reverse = renderer._resolve_range_colors(  # type: ignore[attr-defined]
+        3,
+        {"palette": "viridis", "reverse": True},
+        180,
+    )
+
+    assert reverse[0].getRgb() == normal[-1].getRgb()
+    assert reverse[-1].getRgb() == normal[0].getRgb()
 
 
 def test_overlay_allows_one_dimensional_mix(app: QtWidgets.QApplication) -> None:

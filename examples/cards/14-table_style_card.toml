@@ -1,6 +1,7 @@
 # Table style example:
 # - JSON defines global, row, and column color rules.
 # - Card-level table_style acts as global fallback only.
+# - `reverse = true` flips numeric gradients so low values use the high-end color.
 # - `series_label` acts as card-level compact table title override.
 
 [global]

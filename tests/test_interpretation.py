@@ -120,6 +120,7 @@ def test_table_spec_merges_global_style_override_as_fallback() -> None:
     assert spec.table_style.global_rule is not None
     assert spec.table_style.global_rule.palette == "viridis"
     assert spec.table_style.global_rule.value_range == (0.0, 100.0)
+    assert spec.table_style.global_rule.reverse is None
     assert spec.table_style.row_rules[1] is not None
     assert spec.table_style.row_rules[1].palette == "plasma"
     assert spec.table_style.column_rules[0] is not None
@@ -146,3 +147,25 @@ def test_table_spec_keeps_dataset_global_style_over_card_override() -> None:
     assert spec.table_style.global_rule is not None
     assert spec.table_style.global_rule.palette == "cividis"
     assert spec.table_style.global_rule.value_range is None
+
+
+def test_table_spec_merges_reverse_global_style_override_as_fallback() -> None:
+    dataset = TableDataset(
+        identifier="table",
+        source_path=Path("dummy"),
+        column_names=["a"],
+        row_names=[1],
+        content=[[10]],
+        table_style=TableColorConfig(global_rule=None),
+    )
+    interpreter = DefaultInterpreter()
+
+    spec = interpreter.build_table_spec(
+        dataset,
+        table_style_global_override=TableColorRule(palette="viridis", reverse=True),
+    )
+
+    assert spec.table_style is not None
+    assert spec.table_style.global_rule is not None
+    assert spec.table_style.global_rule.palette == "viridis"
+    assert spec.table_style.global_rule.reverse is True

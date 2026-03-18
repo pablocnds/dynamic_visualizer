@@ -281,8 +281,12 @@ class PlotRenderer:
         image_item.setRect(rect)
         cmap = self._resolve_colormap(spec.style_params, fallback_name="viridis")
         alpha = self._resolve_alpha(spec.style_params, fallback=255)
-        lut = cmap.getLookupTable(nPts=512, alpha=True).copy()
-        lut[:, 3] = alpha
+        lut = self._colormap_lookup_table(
+            cmap,
+            npts=512,
+            alpha=alpha,
+            reverse=self._style_reverse_enabled(spec.style_params),
+        )
         image_item.setLookupTable(lut)
         image_item.setLevels((float(np.nanmin(values)), float(np.nanmax(values))))
         widget.addItem(image_item)
@@ -789,7 +793,13 @@ class PlotRenderer:
             resolved_cmap = self._resolve_colormap(spec.style_params, fallback=cmap)
             if spec.visualization == VisualizationType.COLORMAP:
                 self._render_colormap_with(widget, spec, resolved_cmap)
-                base_colors.append(self._color_from_cmap(resolved_cmap, 0.5))
+                base_colors.append(
+                    self._color_from_cmap(
+                        resolved_cmap,
+                        0.5,
+                        reverse=self._style_reverse_enabled(spec.style_params),
+                    )
+                )
             elif spec.visualization == VisualizationType.EVENTLINE:
                 event_color = self._render_eventline_with(widget, spec, resolved_cmap)
                 base_colors.append(event_color)
@@ -819,8 +829,12 @@ class PlotRenderer:
         image_item.setImage(image, axisOrder="row-major")
         image_item.setRect(rect)
         alpha = self._resolve_alpha(spec.style_params, fallback=255)
-        lut = cmap.getLookupTable(nPts=512, alpha=True).copy()
-        lut[:, 3] = alpha
+        lut = self._colormap_lookup_table(
+            cmap,
+            npts=512,
+            alpha=alpha,
+            reverse=self._style_reverse_enabled(spec.style_params),
+        )
         image_item.setLookupTable(lut)
         levels = (float(np.nanmin(values)), float(np.nanmax(values)))
         image_item.setLevels(levels)
@@ -829,18 +843,19 @@ class PlotRenderer:
     def _render_eventline_with(
         self, widget: pg.PlotWidget, spec: PlotSpec, cmap: pg.ColorMap
     ) -> pg.QtGui.QColor:
+        reverse = self._style_reverse_enabled(spec.style_params)
         x_numeric = self._coerce_array(spec.x, fallback_range=True)
         if x_numeric.size == 0:
-            return self._eventline_color(cmap, alpha=180)
+            return self._eventline_color(cmap, alpha=180, reverse=reverse)
 
         x_numeric = self._coerce_eventline_x(x_numeric, _MAX_EVENT_BINS)
         if x_numeric.size == 0:
-            return self._eventline_color(cmap, alpha=180)
+            return self._eventline_color(cmap, alpha=180, reverse=reverse)
 
         x_min = float(np.nanmin(x_numeric))
         x_max = float(np.nanmax(x_numeric))
 
-        fallback_color = self._eventline_color(cmap, alpha=180)
+        fallback_color = self._eventline_color(cmap, alpha=180, reverse=reverse)
         color = self._resolve_eventline_color(
             spec.style_params,
             fallback_color=fallback_color,
@@ -967,8 +982,12 @@ class PlotRenderer:
         image_item.setRect(rect)
         cmap = self._resolve_colormap(spec.style_params, fallback_name="viridis")
         alpha = self._resolve_alpha(spec.style_params, fallback=_BACKGROUND_ALPHA)
-        lut = cmap.getLookupTable(nPts=512, alpha=True).copy()
-        lut[:, 3] = alpha
+        lut = self._colormap_lookup_table(
+            cmap,
+            npts=512,
+            alpha=alpha,
+            reverse=self._style_reverse_enabled(spec.style_params),
+        )
         image_item.setLookupTable(lut)
         image_item.setLevels((float(np.nanmin(values)), float(np.nanmax(values))))
         image_item.setZValue(-20)
@@ -994,7 +1013,11 @@ class PlotRenderer:
         x_min = float(np.nanmin(x_numeric))
         x_max = float(np.nanmax(x_numeric))
         cmap = self._resolve_colormap(spec.style_params, fallback_name="viridis")
-        fallback_color = self._eventline_color(cmap, alpha=_BACKGROUND_ALPHA)
+        fallback_color = self._eventline_color(
+            cmap,
+            alpha=_BACKGROUND_ALPHA,
+            reverse=self._style_reverse_enabled(spec.style_params),
+        )
         color = self._resolve_eventline_color(
             spec.style_params,
             fallback_color=fallback_color,
@@ -1016,8 +1039,10 @@ class PlotRenderer:
         self._set_event_bar_width(widget, bars, x_min, x_max)
         self._bind_bars_to_view_range(plot_item.getViewBox(), bars)
 
-    def _eventline_color(self, cmap: pg.ColorMap, alpha: int) -> pg.QtGui.QColor:
-        lut = cmap.getLookupTable(nPts=2, alpha=True)
+    def _eventline_color(
+        self, cmap: pg.ColorMap, alpha: int, *, reverse: bool = False
+    ) -> pg.QtGui.QColor:
+        lut = self._colormap_lookup_table(cmap, npts=2, alpha=alpha, reverse=reverse)
         color = pg.mkColor(lut[-1])
         color.setAlpha(alpha)
         return color
@@ -1058,12 +1083,37 @@ class PlotRenderer:
             if palette_name is not None:
                 try:
                     cmap = pg.colormap.get(str(palette_name))
-                    color = self._eventline_color(cmap, alpha=fallback_alpha)
+                    color = self._eventline_color(
+                        cmap,
+                        alpha=fallback_alpha,
+                        reverse=self._style_reverse_enabled(style_params),
+                    )
                 except Exception:
                     pass
         alpha = self._resolve_alpha(style_params, fallback=fallback_alpha)
         color.setAlpha(alpha)
         return color
+
+    @staticmethod
+    def _style_reverse_enabled(style_params: dict | None) -> bool:
+        if not style_params:
+            return False
+        reverse = style_params.get("reverse")
+        return reverse if isinstance(reverse, bool) else False
+
+    def _colormap_lookup_table(
+        self,
+        cmap: pg.ColorMap,
+        *,
+        npts: int,
+        alpha: int,
+        reverse: bool = False,
+    ) -> np.ndarray:
+        lut = cmap.getLookupTable(nPts=npts, alpha=True).copy()
+        if reverse:
+            lut = lut[::-1].copy()
+        lut[:, 3] = alpha
+        return lut
 
     def _bind_image_to_view_range(
         self,
@@ -1129,9 +1179,13 @@ class PlotRenderer:
         handlers.append((signal, handler))
 
     @staticmethod
-    def _color_from_cmap(cmap: pg.ColorMap, position: float) -> pg.QtGui.QColor:
+    def _color_from_cmap(
+        cmap: pg.ColorMap, position: float, *, reverse: bool = False
+    ) -> pg.QtGui.QColor:
         position = max(0.0, min(1.0, float(position)))
         lut = cmap.getLookupTable(nPts=256, alpha=True)
+        if reverse:
+            lut = lut[::-1]
         idx = int(position * (len(lut) - 1))
         return pg.mkColor(lut[idx])
 
@@ -1270,10 +1324,14 @@ class PlotRenderer:
         if style_params:
             colors_value = style_params.get("colors")
             palette_name = style_params.get("palette")
+        reverse = self._style_reverse_enabled(style_params)
 
         colors: list[pg.QtGui.QColor] = []
         if colors_value and isinstance(colors_value, (list, tuple)):
-            for value in colors_value:
+            values = list(colors_value)
+            if reverse:
+                values.reverse()
+            for value in values:
                 color = pg.mkColor(value)
                 color.setAlpha(alpha)
                 colors.append(color)
@@ -1283,6 +1341,8 @@ class PlotRenderer:
             try:
                 cmap = pg.colormap.get(str(palette_name))
                 lut = cmap.getLookupTable(nPts=count, alpha=False)
+                if reverse:
+                    lut = lut[::-1]
                 for entry in lut:
                     color = pg.mkColor(entry)
                     color.setAlpha(alpha)
@@ -1295,6 +1355,8 @@ class PlotRenderer:
                 color = pg.intColor(idx, hues=count * 2)
                 color.setAlpha(alpha)
                 colors.append(color)
+            if reverse:
+                colors.reverse()
         return colors[:count]
 
     def _add_range_regions(

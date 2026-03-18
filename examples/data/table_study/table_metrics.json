@@ -11,7 +11,7 @@
       [88.0, 26.0, 230.0]
     ],
     "table_style": {
-      "global": { "palette": "viridis", "range": [0, 100] },
+      "global": { "palette": "viridis", "range": [0, 100], "reverse": true },
       "rows": [
         null,
         { "palette": "plasma" },

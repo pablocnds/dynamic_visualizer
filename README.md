@@ -30,8 +30,8 @@ Recent sessions are validated on startup/menu refresh; entries pointing to remov
 - Keyboard shortcuts: when a card is selected, use the left/right arrow keys to move to the previous/next visualization. Use up/down arrows to move through the current sidebar list (cards or files), even when the sidebar is collapsed.
 - `5-overlay_card.toml` demonstrates overlaying multiple series in a single chart by supplying arrays in `filepath`/`chart_style` (fully supported; see `docs/card_specification.md`).
 - `13-stick_card.toml` demonstrates a mass-spectrometry-style stick spectrum (`chart_style = { name = "stick", ... }`).
-- `8-colormap_card.toml` and `9-eventline_card.toml` demonstrate style arguments for one-dimensional cards (`palette`/`alpha` and `color`/`alpha`).
-- `14-table_style_card.toml` demonstrates table color customization with JSON-defined row/column styles, card-level global fallback, and a card-level compact table title via `series_label`.
+- `8-colormap_card.toml` and `9-eventline_card.toml` demonstrate style arguments for one-dimensional cards, including palette reversal.
+- `14-table_style_card.toml` demonstrates table color customization with JSON-defined row/column styles, reversible numeric gradients, card-level global fallback, and a card-level compact table title via `series_label`.
 - Compound cards may optionally set `synchronize_axis = true` in `[global]` to keep X-axes linked and hide redundant axes on upper plots.
 - Cards may set `show_x_axis`/`show_y_axis` globally or per subcard to control axis visibility; with `synchronize_axis = true`, X axes are hidden by default unless explicitly enabled.
 - Card behavior and schema are described in `docs/card_specification.md`; quick templates/options are summarized in `docs/cards_reference.md`.

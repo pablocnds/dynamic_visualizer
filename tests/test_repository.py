@@ -214,9 +214,9 @@ def test_table_style_configuration_loads_with_row_column_overrides(tmp_path: Pat
             "row_names": ["r1", "r2"],
             "content": [[10, 20], [30, 40]],
             "table_style": {
-                "global": {"palette": "viridis", "range": [0, 100]},
+                "global": {"palette": "viridis", "range": [0, 100], "reverse": True},
                 "rows": [None, {"palette": "plasma", "range": [5, 45]}],
-                "columns": [{"range": [0, 50]}, {"palette": "cividis"}],
+                "columns": [{"range": [0, 50]}, {"palette": "cividis", "reverse": False}],
             },
         },
     }
@@ -231,12 +231,15 @@ def test_table_style_configuration_loads_with_row_column_overrides(tmp_path: Pat
     assert dataset.table_style.global_rule is not None
     assert dataset.table_style.global_rule.palette == "viridis"
     assert dataset.table_style.global_rule.value_range == (0.0, 100.0)
+    assert dataset.table_style.global_rule.reverse is True
     assert len(dataset.table_style.row_rules) == 2
     assert dataset.table_style.row_rules[1] is not None
     assert dataset.table_style.row_rules[1].palette == "plasma"
     assert len(dataset.table_style.column_rules) == 2
     assert dataset.table_style.column_rules[0] is not None
     assert dataset.table_style.column_rules[0].value_range == (0.0, 50.0)
+    assert dataset.table_style.column_rules[1] is not None
+    assert dataset.table_style.column_rules[1].reverse is False
 
 
 def test_table_style_rejects_row_column_length_mismatches(tmp_path: Path) -> None:
@@ -257,4 +260,24 @@ def test_table_style_rejects_row_column_length_mismatches(tmp_path: Path) -> Non
     repo = DatasetRepository()
 
     with pytest.raises(ValueError, match="data.table_style.rows must contain exactly 2 entries"):
+        repo.load(table_path)
+
+
+def test_table_style_rejects_invalid_reverse_type(tmp_path: Path) -> None:
+    table_path = tmp_path / "bad_reverse_style.json"
+    payload = {
+        "dataset": "bad_reverse_style",
+        "data": {
+            "column_names": ["a"],
+            "row_names": ["r1"],
+            "content": [[10]],
+            "table_style": {
+                "global": {"palette": "viridis", "reverse": "yes"},
+            },
+        },
+    }
+    table_path.write_text(json.dumps(payload))
+    repo = DatasetRepository()
+
+    with pytest.raises(ValueError, match="data.table_style.global.reverse must be a boolean"):
         repo.load(table_path)

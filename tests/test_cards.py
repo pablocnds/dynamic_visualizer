@@ -151,12 +151,12 @@ def test_card_table_style_parses_global_and_subcard_values(tmp_path: Path) -> No
     card_path.write_text(
         """
 [global]
-table_style = { palette = "viridis", range = [0, 100] }
+table_style = { palette = "viridis", range = [0, 100], reverse = true }
 pivot_chart = "{{CLASS}}"
 
 [subcards.table_panel]
 filepath = "<CARD_DIR>/../data/{{CLASS}}/table.json"
-table_style = { palette = "plasma" }
+table_style = { palette = "plasma", reverse = false }
 """
     )
 
@@ -167,9 +167,11 @@ table_style = { palette = "plasma" }
     assert definition.table_style is not None
     assert definition.table_style.palette == "viridis"
     assert definition.table_style.value_range == (0.0, 100.0)
+    assert definition.table_style.reverse is True
     assert subcard.table_style is not None
     assert subcard.table_style.palette == "plasma"
     assert subcard.table_style.value_range is None
+    assert subcard.table_style.reverse is False
 
 
 def test_chart_style_rejects_unknown_args(tmp_path: Path) -> None:
@@ -206,6 +208,23 @@ chart_style = { name = "line", alpha = "opaque" }
         loader.load_definition(card_path)
 
 
+def test_chart_style_rejects_invalid_reverse_type(tmp_path: Path) -> None:
+    cards_dir = tmp_path / "cards"
+    cards_dir.mkdir(parents=True, exist_ok=True)
+    card_path = cards_dir / "invalid_style_reverse.toml"
+    card_path.write_text(
+        """
+filepath = "<CARD_DIR>/data.json"
+chart_style = { name = "colormap", reverse = "yes" }
+"""
+    )
+
+    loader = CardLoader(cards_dir)
+
+    with pytest.raises(ValueError, match="arg 'reverse' must be boolean"):
+        loader.load_definition(card_path)
+
+
 def test_chart_style_alias_accepts_supported_args(tmp_path: Path) -> None:
     cards_dir = tmp_path / "cards"
     cards_dir.mkdir(parents=True, exist_ok=True)
@@ -224,6 +243,24 @@ chart_style = { name = "range", palette = "cividis", alpha = 0.3 }
     assert definition.chart_style.name == "range"
     assert definition.chart_style.params["palette"] == "cividis"
     assert definition.chart_style.visualization() == VisualizationType.RANGE
+
+
+def test_chart_style_accepts_reverse_arg_for_palette_styles(tmp_path: Path) -> None:
+    cards_dir = tmp_path / "cards"
+    cards_dir.mkdir(parents=True, exist_ok=True)
+    card_path = cards_dir / "colormap_reverse.toml"
+    card_path.write_text(
+        """
+filepath = "<CARD_DIR>/data.json"
+chart_style = { name = "colormap", palette = "magma", reverse = true }
+"""
+    )
+
+    loader = CardLoader(cards_dir)
+    definition = loader.load_definition(card_path)
+
+    assert definition.chart_style is not None
+    assert definition.chart_style.params["reverse"] is True
 
 
 def test_wildcard_only_cards_require_single_match(tmp_path: Path) -> None:

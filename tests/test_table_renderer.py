@@ -70,6 +70,35 @@ def test_table_model_row_column_rules_override_global() -> None:
     assert col0_row1 != col0_row0
 
 
+def test_table_model_reverse_flips_numeric_palette_direction() -> None:
+    normal_spec = TableSpec(
+        dataset_id="table-normal",
+        label=None,
+        column_names=["a", "b"],
+        row_names=["r1"],
+        content=[[0, 100]],
+        table_style=TableColorConfig(
+            global_rule=TableColorRule(value_range=(0.0, 100.0), reverse=False)
+        ),
+    )
+    reverse_spec = TableSpec(
+        dataset_id="table-reverse",
+        label=None,
+        column_names=["a", "b"],
+        row_names=["r1"],
+        content=[[0, 100]],
+        table_style=TableColorConfig(
+            global_rule=TableColorRule(value_range=(0.0, 100.0), reverse=True)
+        ),
+    )
+
+    normal_model = TableModel(normal_spec)
+    reverse_model = TableModel(reverse_spec)
+
+    assert _background_rgb(normal_model, 0, 0) == _background_rgb(reverse_model, 0, 1)
+    assert _background_rgb(normal_model, 0, 1) == _background_rgb(reverse_model, 0, 0)
+
+
 def test_table_view_shows_compact_title_when_available(app: QtWidgets.QApplication) -> None:  # noqa: ARG001
     renderer = TableRenderer()
     view = TableView()

@@ -129,6 +129,10 @@
       "additionalProperties": false,
       "properties": {
         "palette": { "type": "string" },
+        "reverse": {
+          "type": "boolean",
+          "description": "Optional flag to flip the palette direction for numeric table values"
+        },
         "range": {
           "type": "array",
           "minItems": 2,

@@ -8,9 +8,10 @@ from typing import Sequence
 class TableColorRule:
     palette: str | None = None
     value_range: tuple[float, float] | None = None
+    reverse: bool | None = None
 
     def cache_key(self) -> tuple[object, ...]:
-        return (self.palette, self.value_range)
+        return (self.palette, self.value_range, self.reverse)
 
     def merged_with(self, fallback: TableColorRule | None) -> TableColorRule:
         if fallback is None:
@@ -18,6 +19,7 @@ class TableColorRule:
         return TableColorRule(
             palette=self.palette if self.palette is not None else fallback.palette,
             value_range=self.value_range if self.value_range is not None else fallback.value_range,
+            reverse=self.reverse if self.reverse is not None else fallback.reverse,
         )
 
 
@@ -56,8 +58,8 @@ def parse_table_color_rule(raw: object | None, *, context: str) -> TableColorRul
     if raw is None:
         return None
     if not isinstance(raw, dict):
-        raise ValueError(f"{context} must be an object with optional 'palette'/'range' entries")
-    allowed = {"palette", "range"}
+        raise ValueError(f"{context} must be an object with optional 'palette'/'range'/'reverse' entries")
+    allowed = {"palette", "range", "reverse"}
     unknown = [key for key in raw.keys() if key not in allowed]
     if unknown:
         raise ValueError(f"{context} contains unsupported keys: {', '.join(sorted(str(k) for k in unknown))}")
@@ -65,9 +67,10 @@ def parse_table_color_rule(raw: object | None, *, context: str) -> TableColorRul
     palette = None if palette_value is None else str(palette_value)
     range_value = raw.get("range")
     value_range = _parse_numeric_range(range_value, context=context)
-    if palette is None and value_range is None:
+    reverse = _parse_optional_bool(raw.get("reverse"), context=f"{context}.reverse")
+    if palette is None and value_range is None and reverse is None:
         return None
-    return TableColorRule(palette=palette, value_range=value_range)
+    return TableColorRule(palette=palette, value_range=value_range, reverse=reverse)
 
 
 def parse_table_color_config(
@@ -146,3 +149,11 @@ def _parse_numeric_range(value: object | None, *, context: str) -> tuple[float, 
     if start <= end:
         return start, end
     return end, start
+
+
+def _parse_optional_bool(value: object | None, *, context: str) -> bool | None:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return value
+    raise ValueError(f"{context} must be a boolean")

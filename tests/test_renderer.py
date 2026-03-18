@@ -5,10 +5,32 @@ import pytest
 PySide6 = pytest.importorskip("PySide6", reason="PySide6 not installed; install requirements to run renderer tests")
 pg = pytest.importorskip("pyqtgraph", reason="pyqtgraph not installed; install requirements to run renderer tests")
 
-from PySide6 import QtWidgets  # type: ignore
+from PySide6 import QtCore, QtWidgets  # type: ignore
 
 from visualizer.interpretation.specs import PlotSpec, RenderInteraction, VisualizationType
 from visualizer.viz.renderer import PlotRenderer
+
+
+class _FakeHoverEvent:
+    def __init__(
+        self,
+        screen_pos: QtCore.QPoint | QtCore.QPointF,
+        *,
+        is_exit: bool = False,
+    ) -> None:
+        self._screen_pos = (
+            screen_pos if isinstance(screen_pos, QtCore.QPointF) else QtCore.QPointF(screen_pos)
+        )
+        self._is_exit = is_exit
+
+    def isExit(self) -> bool:  # noqa: N802
+        return self._is_exit
+
+    def acceptDrags(self, *_args, **_kwargs) -> bool:  # noqa: N802, ANN002, ANN003
+        return False
+
+    def screenPos(self) -> QtCore.QPointF:  # noqa: N802
+        return self._screen_pos
 
 
 @pytest.fixture(scope="module")
@@ -346,6 +368,9 @@ def test_range_render_does_not_raise(app: QtWidgets.QApplication) -> None:
 def test_range_render_applies_hover_tooltips(app: QtWidgets.QApplication) -> None:
     renderer = PlotRenderer()
     widget = pg.PlotWidget()
+    widget.resize(320, 220)
+    widget.show()
+    app.processEvents()
     spec = PlotSpec(
         dataset_id="d7",
         label=None,
@@ -364,8 +389,30 @@ def test_range_render_applies_hover_tooltips(app: QtWidgets.QApplication) -> Non
 
     regions = [item for item in widget.getPlotItem().items if isinstance(item, pg.LinearRegionItem)]
     assert len(regions) == 2
-    assert regions[0].toolTip() == "Window A"
-    assert regions[1].toolTip() == "Window B"
+    assert regions[0].toolTip() == ""
+    hover_box = renderer._interaction_manager.hover_box(widget)  # type: ignore[attr-defined]
+    assert hover_box is not None
+    assert hover_box.isVisible() is False
+
+    enter_pos = widget.viewport().mapToGlobal(QtCore.QPoint(40, 50))
+    regions[0].hoverEvent(_FakeHoverEvent(enter_pos))
+    app.processEvents()
+
+    assert hover_box.isVisible() is True
+    assert hover_box.objectName() == "plotHoverInfoBox"
+    assert hover_box.text() == "Window A"  # type: ignore[attr-defined]
+    first_pos = hover_box.pos()
+
+    move_pos = widget.viewport().mapToGlobal(QtCore.QPoint(120, 90))
+    regions[0].hoverEvent(_FakeHoverEvent(move_pos))
+    app.processEvents()
+
+    assert hover_box.pos() != first_pos
+
+    regions[0].hoverEvent(_FakeHoverEvent(move_pos, is_exit=True))
+    app.processEvents()
+
+    assert hover_box.isVisible() is False
 
 
 def test_colormap_rect_alignment(app: QtWidgets.QApplication) -> None:

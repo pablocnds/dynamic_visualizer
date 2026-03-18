@@ -17,7 +17,7 @@ For a concise template-oriented guide, see `docs/cards_reference.md`.
   - `colormap`: `palette`, `alpha`, `reverse`
   - `eventline`: `color`, `palette`, `alpha`, `reverse`
   - `ranges`: `colors`, `palette`, `alpha`, `reverse` (`colors` wins over `palette` when both are set)
-- Range hover info: range datasets can provide `data.range_info` in JSON (one entry per range). Those values are shown on mouse hover and work in standalone range charts and overlays.
+- Range hover info: range datasets can provide `data.range_info` in JSON (one entry per range). Those values are shown in an instant floating hover box that follows the cursor and work in standalone range charts and overlays.
 - Synchronization: compound cards may set `synchronize_axis = true` under `[global]` to link the X axis across panels (panning/zooming one updates the others).
 - Axis visibility: `show_x_axis` and `show_y_axis` can be set globally or per subcard to explicitly show/hide axes for plot panels. When `synchronize_axis = true`, X axes are hidden by default unless explicitly enabled. `show_x_axis` controls the 1-D top overlay axis as well as the 2-D bottom axis; `show_y_axis` applies only to 2-D plots.
 - Table style: optional `table_style = { palette = "...", range = [min, max], reverse = true }` can be set globally or per subcard for table datasets. `reverse = true` flips the gradient direction. JSON row/column table style overrides still take precedence over this card-level global fallback.

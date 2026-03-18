@@ -1255,6 +1255,7 @@ class PlotRenderer:
         if visible:
             plot_item.showAxis(axis_name, show=True)
             try:
+                axis.show()
                 axis.setStyle(showValues=True)
                 axis.setPen(axis.textPen())
                 axis.setTextPen(axis.textPen())
@@ -1268,6 +1269,7 @@ class PlotRenderer:
             return
         plot_item.showAxis(axis_name, show=False)
         try:
+            axis.hide()
             axis.setStyle(showValues=False, tickLength=0)
             axis.setPen(None)
             axis.setTextPen(None)

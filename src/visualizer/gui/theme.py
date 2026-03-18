@@ -15,6 +15,9 @@ DEFAULT_PALETTE: Dict[str, str] = {
     "accent_soft": "#e6eef5",
     "warning": "#9c6d00",
     "button_bg": "#ffffff",
+    "hover_info_bg": "#ffffff",
+    "hover_info_text": "#1b1b1b",
+    "hover_info_border": "#c6c6c6",
 }
 
 
@@ -269,6 +272,18 @@ QTableView {{
   font-size: 11px;
   font-weight: 600;
   padding: 0 4px;
+}}
+
+#plotHoverInfoBox {{
+  background: {colors["hover_info_bg"]};
+  border: 1px solid {colors["hover_info_border"]};
+  border-radius: 8px;
+}}
+
+#plotHoverInfoLabel {{
+  color: {colors["hover_info_text"]};
+  background: transparent;
+  font-size: 12px;
 }}
 
 #cardVariablesGroup QLabel {{

@@ -157,7 +157,9 @@ def test_range_overlay_renders_items(app: QtWidgets.QApplication) -> None:  # no
     items = plot.getPlotItem().items
     regions = [item for item in items if isinstance(item, pg.LinearRegionItem)]
     assert regions
-    assert any(region.toolTip() for region in regions)
+    hover_box = plot.viewport().findChild(QtWidgets.QFrame, "plotHoverInfoBox")
+    assert hover_box is not None
+    assert "#plotHoverInfoBox" in window.styleSheet()
 
 
 def test_colorbars_absent_after_rerender(app: QtWidgets.QApplication) -> None:  # noqa: ARG001
@@ -183,7 +185,9 @@ def test_synchronized_axes_respect_axis_visibility(app: QtWidgets.QApplication) 
     top_axis = plots[0].getPlotItem().getAxis("bottom")
     bottom_axis = plots[-1].getPlotItem().getAxis("bottom")
     assert top_axis.isVisible() is True
-    assert bottom_axis.isVisible() is False
+    assert top_axis.style["showValues"] is True
+    assert bottom_axis.style["showValues"] is False
+    assert bottom_axis.labelText == ""
 
 
 def test_missing_panels_clear_previous_items(

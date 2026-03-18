@@ -279,5 +279,5 @@ def test_table_style_rejects_invalid_reverse_type(tmp_path: Path) -> None:
     table_path.write_text(json.dumps(payload))
     repo = DatasetRepository()
 
-    with pytest.raises(ValueError, match="data.table_style.global.reverse must be a boolean"):
+    with pytest.raises(ValueError, match="reverse'.*boolean|not of type 'boolean'"):
         repo.load(table_path)

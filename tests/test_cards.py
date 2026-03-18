@@ -103,7 +103,7 @@ def test_overlay_card_definitions_and_series() -> None:
     assert len(overlay_series.series) == 2
 
 
-def test_cards_with_multiple_variables_require_pivot(tmp_path: Path) -> None:
+def test_cards_with_multiple_variables_default_to_first_pivot(tmp_path: Path) -> None:
     cards_dir = tmp_path
     cards_dir.mkdir(parents=True, exist_ok=True)
     card_path = cards_dir / "missing_pivot.toml"
@@ -113,9 +113,10 @@ filepath = "<CARD_DIR>/../data/complex_study/{{DATASET}}/{{CLASS}}/time_series.j
 """
     )
     loader = CardLoader(cards_dir)
+    definition = loader.load_definition(card_path)
 
-    with pytest.raises(ValueError):
-        loader.load_definition(card_path)
+    assert definition.variables == ("CLASS", "DATASET")
+    assert definition.pivot_variable == "CLASS"
 
 
 def test_top_level_axis_visibility_false_is_not_overridden_by_global(tmp_path: Path) -> None:

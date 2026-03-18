@@ -26,7 +26,7 @@ Desktop GUI (PySide6 + PyQtGraph) that loads JSON data, infers sensible defaults
 
 ## Card Rules (see `docs/card_specification.md`)
 - Variables (`{{VAR}}`) are single-level components discovered from directory/file names. Wildcards (`*`) are plain globs and not exposed as variables.
-- If a card has more than one variable, `pivot_chart` is required; single-variable cards may omit it.
+- `pivot_chart` is optional; when omitted, cards default to the first discovered variable (alphabetical).
 - Subcards may set `chart_height` and `chart_style`; overlays accept arrays for `filepath`/`chart_style`, optional per-series labels, and fall back to the global style when unspecified. Variable-level regex filters apply to overlays too.
 - Discovery is template-driven and bounded per subcard; recursive scans are limited to variable positions, not arbitrary depth. Wildcards that remain in non-overlay paths must resolve to exactly one file.
 

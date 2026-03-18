@@ -2,6 +2,6 @@
 
 [global]
 pivot_chart = "{{CLASS}}"
-chart_style = "eventline"
+chart_style = { name = "eventline", color = "#223f9a", alpha = 0.7 }
 
 filepath = "<CARD_DIR>/../data/overlay_demo/{{CLASS}}/base_signal.json"

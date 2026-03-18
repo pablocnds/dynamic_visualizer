@@ -17,6 +17,7 @@ from .models import (
     SeriesDefinition,
 )
 from .utils import _template_to_glob, _template_to_regex
+from visualizer.chart_style_args import validate_chart_style_args
 from visualizer.table_style import TableColorRule, parse_table_color_rule
 
 MAX_MATCHES = 1000
@@ -41,7 +42,7 @@ class CardLoader:
         if filepath_template is None:
             filepath_template = data.get("card", {}).get("filepath")
         chart_style_raw = _resolve_card_option(data, global_section, "chart_style")
-        chart_style = _maybe_first_style(chart_style_raw)
+        chart_style = _maybe_first_style(chart_style_raw, context=f"{path} chart_style")
         table_style = _parse_table_style(
             _resolve_card_option(data, global_section, "table_style"),
             context=f"{path} table_style",
@@ -81,7 +82,9 @@ class CardLoader:
                         name=name,
                         filepaths=filepaths,
                         chart_styles=_normalize_style_list(
-                            config.get("chart_style"), len(filepaths)
+                            config.get("chart_style"),
+                            len(filepaths),
+                            context=f"{path} subcards.{name}.chart_style",
                         ),
                         overlay_variable=overlay_var,
                         overlay_labels=_normalize_label_list(config.get("series_label"), len(filepaths)),
@@ -102,7 +105,10 @@ class CardLoader:
                         name=name,
                         filepath_template=str(match_template),
                         variables=_remove_overlay_variable(extracted_vars, overlay_var),
-                        chart_style=_maybe_first_style(config.get("chart_style")),
+                        chart_style=_maybe_first_style(
+                            config.get("chart_style"),
+                            context=f"{path} subcards.{name}.chart_style",
+                        ),
                         table_style=_parse_table_style(
                             config.get("table_style"),
                             context=f"{path} subcards.{name}.table_style",
@@ -132,7 +138,11 @@ class CardLoader:
                 overlay_panels["overlay"] = OverlayDefinition(
                     name="overlay",
                     filepaths=filepaths,
-                    chart_styles=_normalize_style_list(chart_style_raw, len(filepaths)),
+                    chart_styles=_normalize_style_list(
+                        chart_style_raw,
+                        len(filepaths),
+                        context=f"{path} chart_style",
+                    ),
                     overlay_variable=overlay_var,
                     overlay_labels=_normalize_label_list(data.get("series_label"), len(filepaths)),
                     overlay_path_filter=_normalize_variable(data.get("overlay_path_filter")),
@@ -143,7 +153,7 @@ class CardLoader:
                         name="overlay",
                         filepath_template=template,
                         variables=_remove_overlay_variable(extracted_vars, overlay_var),
-                        chart_style=_maybe_first_style(chart_style),
+                        chart_style=_maybe_first_style(chart_style, context=f"{path} chart_style"),
                         table_style=table_style,
                         filepaths=filepaths,
                         overlay_variable=overlay_var,
@@ -158,7 +168,7 @@ class CardLoader:
                         name="default",
                         filepath_template=template,
                         variables=_extract_variables(template),
-                        chart_style=_maybe_first_style(chart_style),
+                        chart_style=_maybe_first_style(chart_style, context=f"{path} chart_style"),
                         table_style=table_style,
                         filepaths=[template],
                         overlay_variable=None,
@@ -316,36 +326,46 @@ def _extract_variables(template: object) -> Tuple[str, ...]:
     return tuple(VAR_PATTERN.findall(str(template)))
 
 
-def _parse_chart_style(value: object | None) -> ChartStyle | None:
+def _parse_chart_style(value: object | None, *, context: str) -> ChartStyle | None:
     if value is None:
         return None
     if isinstance(value, ChartStyle):
+        validate_chart_style_args(value.name, value.params, context=context)
         return value
     if isinstance(value, dict):
         if "name" not in value:
             raise ValueError("chart_style object must include 'name'")
         params = {k: v for k, v in value.items() if k != "name"}
-        return ChartStyle(name=str(value["name"]), params=params)
-    return ChartStyle(name=str(value))
+        style_name = str(value["name"])
+        validate_chart_style_args(style_name, params, context=context)
+        return ChartStyle(name=style_name, params=params)
+    style_name = str(value)
+    validate_chart_style_args(style_name, {}, context=context)
+    return ChartStyle(name=style_name)
 
 
-def _maybe_first_style(value: object | None) -> Optional[ChartStyle]:
+def _maybe_first_style(value: object | None, *, context: str) -> Optional[ChartStyle]:
     if value is None:
         return None
     if isinstance(value, list) and value:
-        return _parse_chart_style(value[0])
-    return _parse_chart_style(value)
+        return _parse_chart_style(value[0], context=f"{context}[0]")
+    return _parse_chart_style(value, context=context)
 
 
-def _normalize_style_list(value: object | None, expected: int) -> List[Optional[ChartStyle]]:
+def _normalize_style_list(
+    value: object | None, expected: int, *, context: str
+) -> List[Optional[ChartStyle]]:
     if value is None:
         return [None] * expected
     if isinstance(value, list):
-        styles = [_parse_chart_style(item) for item in value]
+        styles = [
+            _parse_chart_style(item, context=f"{context}[{idx}]")
+            for idx, item in enumerate(value)
+        ]
         if len(styles) < expected:
             styles += [styles[-1] if styles else None] * (expected - len(styles))
         return styles
-    return [_parse_chart_style(value)] * expected
+    return [_parse_chart_style(value, context=context)] * expected
 
 
 def _remove_overlay_variable(variables: Tuple[str, ...], overlay_variable: str | None) -> Tuple[str, ...]:

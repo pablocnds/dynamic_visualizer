@@ -116,6 +116,105 @@ def test_stick_render_draws_vertical_sticks(app: QtWidgets.QApplication) -> None
     assert pen.color().green() > 100
 
 
+def test_line_style_params_apply_width_color_and_alpha(app: QtWidgets.QApplication) -> None:
+    renderer = PlotRenderer()
+    widget = pg.PlotWidget()
+    spec = PlotSpec(
+        dataset_id="line-style",
+        label=None,
+        x=[0.0, 1.0, 2.0],
+        y=[1.0, 3.0, 2.0],
+        x_label="x",
+        y_label="y",
+        visualization=VisualizationType.LINE,
+        style_params={"color": "#ff5500", "line_width": 3.0, "alpha": 0.5},
+    )
+    renderer.render(widget, spec)
+
+    plot_items = [item for item in widget.getPlotItem().items if isinstance(item, pg.PlotDataItem)]
+    assert plot_items
+    pen = plot_items[0].opts["pen"]
+    assert pen.widthF() == pytest.approx(3.0)
+    assert pen.color().red() > 200
+    assert pen.color().alpha() == pytest.approx(127, abs=1)
+
+
+def test_scatter_style_params_apply_size_color_and_alpha(app: QtWidgets.QApplication) -> None:
+    renderer = PlotRenderer()
+    widget = pg.PlotWidget()
+    spec = PlotSpec(
+        dataset_id="scatter-style",
+        label=None,
+        x=[0.0, 1.0, 2.0],
+        y=[1.0, 3.0, 2.0],
+        x_label="x",
+        y_label="y",
+        visualization=VisualizationType.SCATTER,
+        style_params={"color": "#0066ff", "marker_size": 9.0, "alpha": 0.25},
+    )
+    renderer.render(widget, spec)
+
+    plot_items = [item for item in widget.getPlotItem().items if isinstance(item, pg.PlotDataItem)]
+    assert plot_items
+    item = plot_items[0]
+    assert item.opts["symbolSize"] == pytest.approx(9.0)
+    brush = item.opts["symbolBrush"]
+    color = brush.color() if hasattr(brush, "color") else brush
+    assert color.blue() > 180
+    assert color.alpha() == pytest.approx(63, abs=1)
+
+
+def test_colormap_style_params_use_custom_palette(app: QtWidgets.QApplication, monkeypatch: pytest.MonkeyPatch) -> None:
+    renderer = PlotRenderer()
+    widget = pg.PlotWidget()
+    seen: list[str] = []
+    original_get = pg.colormap.get
+
+    def _tracking_get(name, *args, **kwargs):  # type: ignore[no-untyped-def]
+        seen.append(str(name))
+        return original_get(name, *args, **kwargs)
+
+    monkeypatch.setattr("visualizer.viz.renderer.pg.colormap.get", _tracking_get)
+    spec = PlotSpec(
+        dataset_id="colormap-style",
+        label=None,
+        x=[0.0, 1.0, 2.0],
+        y=[1.0, 3.0, 2.0],
+        x_label="x",
+        y_label="y",
+        visualization=VisualizationType.COLORMAP,
+        style_params={"palette": "magma", "alpha": 0.5},
+    )
+    renderer.render(widget, spec)
+
+    assert "magma" in seen
+
+
+def test_eventline_style_params_resolve_color_and_alpha(app: QtWidgets.QApplication) -> None:
+    renderer = PlotRenderer()
+    color = renderer._resolve_eventline_color(  # type: ignore[attr-defined]
+        {"color": "#cc0000", "alpha": 0.25},
+        fallback_color=pg.mkColor(0, 0, 0),
+        fallback_alpha=180,
+    )
+
+    assert color.red() > 150
+    assert color.green() < 80
+    assert color.alpha() == pytest.approx(63, abs=1)
+
+
+def test_eventline_style_params_resolve_palette_when_color_missing(app: QtWidgets.QApplication) -> None:
+    renderer = PlotRenderer()
+    color = renderer._resolve_eventline_color(  # type: ignore[attr-defined]
+        {"palette": "plasma", "alpha": 0.6},
+        fallback_color=pg.mkColor(0, 0, 0),
+        fallback_alpha=180,
+    )
+
+    assert color.alpha() == pytest.approx(153, abs=1)
+    assert (color.red(), color.green(), color.blue()) != (0, 0, 0)
+
+
 def test_overlay_allows_one_dimensional_mix(app: QtWidgets.QApplication) -> None:
     renderer = PlotRenderer()
     widget = pg.PlotWidget()

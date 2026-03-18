@@ -172,6 +172,60 @@ table_style = { palette = "plasma" }
     assert subcard.table_style.value_range is None
 
 
+def test_chart_style_rejects_unknown_args(tmp_path: Path) -> None:
+    cards_dir = tmp_path / "cards"
+    cards_dir.mkdir(parents=True, exist_ok=True)
+    card_path = cards_dir / "invalid_style_args.toml"
+    card_path.write_text(
+        """
+filepath = "<CARD_DIR>/data.json"
+chart_style = { name = "colormap", color = "#ff0000" }
+"""
+    )
+
+    loader = CardLoader(cards_dir)
+
+    with pytest.raises(ValueError, match="unsupported chart_style args"):
+        loader.load_definition(card_path)
+
+
+def test_chart_style_rejects_invalid_alpha_type(tmp_path: Path) -> None:
+    cards_dir = tmp_path / "cards"
+    cards_dir.mkdir(parents=True, exist_ok=True)
+    card_path = cards_dir / "invalid_style_alpha.toml"
+    card_path.write_text(
+        """
+filepath = "<CARD_DIR>/data.json"
+chart_style = { name = "line", alpha = "opaque" }
+"""
+    )
+
+    loader = CardLoader(cards_dir)
+
+    with pytest.raises(ValueError, match="arg 'alpha' must be numeric"):
+        loader.load_definition(card_path)
+
+
+def test_chart_style_alias_accepts_supported_args(tmp_path: Path) -> None:
+    cards_dir = tmp_path / "cards"
+    cards_dir.mkdir(parents=True, exist_ok=True)
+    card_path = cards_dir / "range_alias.toml"
+    card_path.write_text(
+        """
+filepath = "<CARD_DIR>/data.json"
+chart_style = { name = "range", palette = "cividis", alpha = 0.3 }
+"""
+    )
+
+    loader = CardLoader(cards_dir)
+    definition = loader.load_definition(card_path)
+
+    assert definition.chart_style is not None
+    assert definition.chart_style.name == "range"
+    assert definition.chart_style.params["palette"] == "cividis"
+    assert definition.chart_style.visualization() == VisualizationType.RANGE
+
+
 def test_wildcard_only_cards_require_single_match(tmp_path: Path) -> None:
     cards_dir = tmp_path / "cards"
     data_dir = tmp_path / "data"

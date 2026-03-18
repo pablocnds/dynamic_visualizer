@@ -279,8 +279,11 @@ class PlotRenderer:
         image_item = pg.ImageItem()
         image_item.setImage(image, axisOrder="row-major")
         image_item.setRect(rect)
-        cmap = pg.colormap.get("viridis")
-        image_item.setLookupTable(cmap.getLookupTable(alpha=False))
+        cmap = self._resolve_colormap(spec.style_params, fallback_name="viridis")
+        alpha = self._resolve_alpha(spec.style_params, fallback=255)
+        lut = cmap.getLookupTable(nPts=512, alpha=True).copy()
+        lut[:, 3] = alpha
+        image_item.setLookupTable(lut)
         image_item.setLevels((float(np.nanmin(values)), float(np.nanmax(values))))
         widget.addItem(image_item)
         widget.setLabel("bottom", None)
@@ -313,12 +316,18 @@ class PlotRenderer:
 
         x_min = float(np.nanmin(x_numeric))
         x_max = float(np.nanmax(x_numeric))
+        event_color = self._resolve_eventline_color(
+            spec.style_params,
+            fallback_color=pg.mkColor(0, 0, 0),
+            fallback_alpha=180,
+        )
+        colors = [event_color] * len(x_numeric)
         bars = pg.BarGraphItem(
             x=x_numeric,
             height=np.ones_like(x_numeric),
             width=1.0,
-            brushes=[(0, 0, 0, 180)] * len(x_numeric),
-            pens=[(0, 0, 0, 180)] * len(x_numeric),
+            brushes=colors,
+            pens=colors,
         )
         plot_item.addItem(bars)
         self._set_event_bar_width(widget, bars, x_min, x_max)
@@ -327,7 +336,7 @@ class PlotRenderer:
         widget.setYRange(0, 1, padding=0)
         widget.showGrid(x=False, y=False)
         if show_axis is not False:
-            axis_colors = self._axis_colors_for_base_colors([pg.mkColor(0, 0, 0)])
+            axis_colors = self._axis_colors_for_base_colors([event_color])
             self._ensure_top_axis_overlay(widget, axis_colors)
 
     def _render_range(self, widget: pg.PlotWidget, spec: PlotSpec, show_axis: bool | None) -> None:
@@ -777,12 +786,13 @@ class PlotRenderer:
 
         for idx, spec in enumerate(specs):
             cmap = pg.colormap.get(cmap_names[idx % len(cmap_names)])
+            resolved_cmap = self._resolve_colormap(spec.style_params, fallback=cmap)
             if spec.visualization == VisualizationType.COLORMAP:
-                self._render_colormap_with(widget, spec, cmap)
-                base_colors.append(self._color_from_cmap(cmap, 0.5))
+                self._render_colormap_with(widget, spec, resolved_cmap)
+                base_colors.append(self._color_from_cmap(resolved_cmap, 0.5))
             elif spec.visualization == VisualizationType.EVENTLINE:
-                self._render_eventline_with(widget, spec, cmap)
-                base_colors.append(self._color_from_cmap(cmap, 0.8))
+                event_color = self._render_eventline_with(widget, spec, resolved_cmap)
+                base_colors.append(event_color)
             elif spec.visualization == VisualizationType.RANGE:
                 colors = self._render_range_with(widget, spec)
                 if colors:
@@ -808,24 +818,34 @@ class PlotRenderer:
         image_item = pg.ImageItem()
         image_item.setImage(image, axisOrder="row-major")
         image_item.setRect(rect)
-        image_item.setLookupTable(cmap.getLookupTable(alpha=False))
+        alpha = self._resolve_alpha(spec.style_params, fallback=255)
+        lut = cmap.getLookupTable(nPts=512, alpha=True).copy()
+        lut[:, 3] = alpha
+        image_item.setLookupTable(lut)
         levels = (float(np.nanmin(values)), float(np.nanmax(values)))
         image_item.setLevels(levels)
         widget.addItem(image_item)
 
-    def _render_eventline_with(self, widget: pg.PlotWidget, spec: PlotSpec, cmap: pg.ColorMap) -> None:
+    def _render_eventline_with(
+        self, widget: pg.PlotWidget, spec: PlotSpec, cmap: pg.ColorMap
+    ) -> pg.QtGui.QColor:
         x_numeric = self._coerce_array(spec.x, fallback_range=True)
         if x_numeric.size == 0:
-            return
+            return self._eventline_color(cmap, alpha=180)
 
         x_numeric = self._coerce_eventline_x(x_numeric, _MAX_EVENT_BINS)
         if x_numeric.size == 0:
-            return
+            return self._eventline_color(cmap, alpha=180)
 
         x_min = float(np.nanmin(x_numeric))
         x_max = float(np.nanmax(x_numeric))
 
-        color = self._eventline_color(cmap, alpha=180)
+        fallback_color = self._eventline_color(cmap, alpha=180)
+        color = self._resolve_eventline_color(
+            spec.style_params,
+            fallback_color=fallback_color,
+            fallback_alpha=fallback_color.alpha(),
+        )
         colors = [color] * len(x_numeric)
         bars = pg.BarGraphItem(
             x=x_numeric,
@@ -836,6 +856,7 @@ class PlotRenderer:
         )
         widget.addItem(bars)
         self._set_event_bar_width(widget, bars, x_min, x_max)
+        return color
 
     def _render_range_with(self, widget: pg.PlotWidget, spec: PlotSpec) -> list[pg.QtGui.QColor]:
         ranges = list(spec.ranges or [])
@@ -944,9 +965,10 @@ class PlotRenderer:
         image_item = pg.ImageItem()
         image_item.setImage(image, axisOrder="row-major")
         image_item.setRect(rect)
-        cmap = pg.colormap.get("viridis")
+        cmap = self._resolve_colormap(spec.style_params, fallback_name="viridis")
+        alpha = self._resolve_alpha(spec.style_params, fallback=_BACKGROUND_ALPHA)
         lut = cmap.getLookupTable(nPts=512, alpha=True).copy()
-        lut[:, 3] = _BACKGROUND_ALPHA
+        lut[:, 3] = alpha
         image_item.setLookupTable(lut)
         image_item.setLevels((float(np.nanmin(values)), float(np.nanmax(values))))
         image_item.setZValue(-20)
@@ -971,8 +993,13 @@ class PlotRenderer:
 
         x_min = float(np.nanmin(x_numeric))
         x_max = float(np.nanmax(x_numeric))
-        cmap = pg.colormap.get("viridis")
-        color = self._eventline_color(cmap, alpha=_BACKGROUND_ALPHA)
+        cmap = self._resolve_colormap(spec.style_params, fallback_name="viridis")
+        fallback_color = self._eventline_color(cmap, alpha=_BACKGROUND_ALPHA)
+        color = self._resolve_eventline_color(
+            spec.style_params,
+            fallback_color=fallback_color,
+            fallback_alpha=_BACKGROUND_ALPHA,
+        )
         colors = [color] * len(x_numeric)
         y_span = y_max - y_min if y_max != y_min else 1.0
 
@@ -992,6 +1019,49 @@ class PlotRenderer:
     def _eventline_color(self, cmap: pg.ColorMap, alpha: int) -> pg.QtGui.QColor:
         lut = cmap.getLookupTable(nPts=2, alpha=True)
         color = pg.mkColor(lut[-1])
+        color.setAlpha(alpha)
+        return color
+
+    def _resolve_colormap(
+        self,
+        style_params: dict | None,
+        *,
+        fallback_name: str = "viridis",
+        fallback: pg.ColorMap | None = None,
+    ) -> pg.ColorMap:
+        if style_params and "palette" in style_params:
+            palette_name = style_params.get("palette")
+            if palette_name is not None:
+                try:
+                    return pg.colormap.get(str(palette_name))
+                except Exception:
+                    pass
+        if fallback is not None:
+            return fallback
+        return pg.colormap.get(fallback_name)
+
+    def _resolve_eventline_color(
+        self,
+        style_params: dict | None,
+        *,
+        fallback_color: pg.QtGui.QColor,
+        fallback_alpha: int,
+    ) -> pg.QtGui.QColor:
+        color = pg.mkColor(fallback_color)
+        if style_params and "color" in style_params:
+            try:
+                color = pg.mkColor(style_params.get("color"))
+            except Exception:
+                pass
+        elif style_params and "palette" in style_params:
+            palette_name = style_params.get("palette")
+            if palette_name is not None:
+                try:
+                    cmap = pg.colormap.get(str(palette_name))
+                    color = self._eventline_color(cmap, alpha=fallback_alpha)
+                except Exception:
+                    pass
+        alpha = self._resolve_alpha(style_params, fallback=fallback_alpha)
         color.setAlpha(alpha)
         return color
 

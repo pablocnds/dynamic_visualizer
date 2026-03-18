@@ -206,3 +206,26 @@ def test_missing_panels_clear_previous_items(
     window._render_current_card_selection()
     assert any(isinstance(item, pg.PlotDataItem) for item in primary.getPlotItem().items)
     assert not any(isinstance(item, pg.ImageItem) for item in secondary.getPlotItem().items)
+
+
+def test_restore_state_uses_card_dir_when_card_file_is_missing(
+    app: QtWidgets.QApplication, tmp_path: Path, monkeypatch: pytest.MonkeyPatch  # noqa: ARG001
+) -> None:
+    cards_dir = tmp_path / "cards"
+    cards_dir.mkdir(parents=True)
+    (cards_dir / "demo.toml").write_text('filepath = "<CARD_DIR>/../data/*.json"\n')
+    missing_card = cards_dir / "does_not_exist.toml"
+
+    saved_state = {
+        "card_file": str(missing_card),
+        "card_dir": str(cards_dir),
+    }
+
+    monkeypatch.setattr("visualizer.gui.main_window.StateManager.load", lambda _self: saved_state)
+    monkeypatch.setattr("visualizer.gui.main_window.StateManager.save", lambda _self, _state: None)
+
+    window = MainWindow(data_dir=None, cards_dir=None)
+
+    assert window._cards_dir == cards_dir  # type: ignore[attr-defined]
+    assert window._card_list.count() == 1  # type: ignore[attr-defined]
+    assert window._sidebar_mode == "card"  # type: ignore[attr-defined]

@@ -118,6 +118,31 @@ filepath = "<CARD_DIR>/../data/complex_study/{{DATASET}}/{{CLASS}}/time_series.j
         loader.load_definition(card_path)
 
 
+def test_top_level_axis_visibility_false_is_not_overridden_by_global(tmp_path: Path) -> None:
+    cards_dir = tmp_path / "cards"
+    cards_dir.mkdir(parents=True, exist_ok=True)
+    card_path = cards_dir / "axis_visibility.toml"
+    card_path.write_text(
+        """
+filepath = "<CARD_DIR>/../data/{{CLASS}}/signal.json"
+show_x_axis = false
+show_y_axis = false
+
+[global]
+show_x_axis = true
+show_y_axis = true
+"""
+    )
+
+    loader = CardLoader(cards_dir)
+    definition = loader.load_definition(card_path)
+
+    assert definition.show_x_axis is False
+    assert definition.show_y_axis is False
+    assert definition.subcards[0].show_x_axis is False
+    assert definition.subcards[0].show_y_axis is False
+
+
 def test_wildcard_only_cards_require_single_match(tmp_path: Path) -> None:
     cards_dir = tmp_path / "cards"
     data_dir = tmp_path / "data"

@@ -6,7 +6,7 @@ Interactive framework for loading processed analytical datasets (JSON) and rende
 1. `python3 -m venv .venv && source .venv/bin/activate`
 2. `pip install -e ".[dev]"`
 3. Launch the GUI via `dynamic-visualizer` (or `python -m visualizer`).
-4. Use the File menu to open a data folder (or add individual files) to populate the sidebar. Use File > Open Card File to load card definitions for the session (last-used paths are remembered across runs).
+4. Use the File menu to open a data folder (or add individual files) to populate the sidebar. Use File > Open Card File to load card definitions for the session (last-used paths are remembered across runs; if the previously selected card file is missing, the app restores the last card directory instead).
 5. Follow `docs/development_guide.md` (architecture/roadmap) and `docs/card_specification.md` (card format) as you extend the project.
 
 ## Local Packaging

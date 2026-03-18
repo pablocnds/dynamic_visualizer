@@ -36,22 +36,22 @@ class CardLoader:
         with path.open("rb") as handle:
             data = tomllib.load(handle)
         global_section = data.get("global", {})
-        filepath_template = (
-            data.get("filepath")
-            or global_section.get("filepath")
-            or data.get("card", {}).get("filepath")
-        )
-        chart_style_raw = data.get("chart_style") or global_section.get("chart_style")
+        filepath_template = _resolve_card_option(data, global_section, "filepath")
+        if filepath_template is None:
+            filepath_template = data.get("card", {}).get("filepath")
+        chart_style_raw = _resolve_card_option(data, global_section, "chart_style")
         chart_style = _maybe_first_style(chart_style_raw)
-        pivot = data.get("pivot_chart") or global_section.get("pivot_chart")
+        pivot = _resolve_card_option(data, global_section, "pivot_chart")
         synchronize_axis = bool(global_section.get("synchronize_axis", False))
-        show_x_axis = _parse_optional_bool(data.get("show_x_axis") or global_section.get("show_x_axis"))
-        show_y_axis = _parse_optional_bool(data.get("show_y_axis") or global_section.get("show_y_axis"))
+        show_x_axis = _parse_optional_bool(_resolve_card_option(data, global_section, "show_x_axis"))
+        show_y_axis = _parse_optional_bool(_resolve_card_option(data, global_section, "show_y_axis"))
         subcards_section = data.get("subcards") or {}
 
         subcards: List[SubcardDefinition] = []
         overlay_panels: Dict[str, OverlayDefinition] = {}
-        overlay_var_global = _normalize_variable(global_section.get("overlay_variable"))
+        overlay_var_global = _normalize_variable(
+            _resolve_card_option(data, global_section, "overlay_variable")
+        )
         variable_filters = _normalize_filter_map(data.get("variable_filters", {}))
         if subcards_section:
             for name, config in subcards_section.items():
@@ -106,7 +106,9 @@ class CardLoader:
                     )
                 )
         elif filepath_template:
-            overlay_var = _normalize_variable(data.get("overlay_variable") or overlay_var_global)
+            overlay_var = _normalize_variable(
+                _resolve_card_option(data, global_section, "overlay_variable") or overlay_var_global
+            )
             if isinstance(filepath_template, list):
                 filepaths = [_ensure_string(path) for path in filepath_template]
                 extracted_vars = _collect_variables(filepaths)
@@ -244,6 +246,12 @@ def _normalize_variable(value: object | None) -> str | None:
     if text.startswith("{{") and text.endswith("}}"):
         text = text[2:-2].strip()
     return text or None
+
+
+def _resolve_card_option(data: dict, global_section: dict, key: str) -> object | None:
+    if key in data:
+        return data.get(key)
+    return global_section.get(key)
 
 
 def _normalize_template(subcard: SubcardDefinition, card_path: Path) -> str:

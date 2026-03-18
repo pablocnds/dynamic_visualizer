@@ -625,6 +625,7 @@ class MainWindow(QtWidgets.QMainWindow):
     def _restore_state(self) -> None:
         data_dir = self._saved_state.get("data_dir")
         card_file = self._saved_state.get("card_file")
+        card_dir = self._saved_state.get("card_dir")
         data_file = self._saved_state.get("data_file")
         added_files = self._saved_state.get("added_files", [])
         if data_dir:
@@ -635,11 +636,17 @@ class MainWindow(QtWidgets.QMainWindow):
             path = Path(file_path)
             if path.exists():
                 self._added_files.add(path)
+        card_file_restored = False
         if card_file:
             path = Path(card_file)
             if path.exists():
                 self._pending_card_file = path
                 self._set_card_loader(path.parent, select_card=path)
+                card_file_restored = True
+        if not card_file_restored and card_dir:
+            path = Path(card_dir)
+            if path.exists() and path.is_dir():
+                self._set_card_loader(path)
         if data_file:
             path = Path(data_file)
             if path.exists():

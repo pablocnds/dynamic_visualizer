@@ -61,6 +61,10 @@
           },
           "description": "Row-major table cell values"
         },
+        "table_title": {
+          "type": "string",
+          "description": "Optional compact title displayed above table views"
+        },
         "table_style": {
           "type": "object",
           "additionalProperties": false,

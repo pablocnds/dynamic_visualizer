@@ -49,6 +49,7 @@ class TableDataset:
     column_names: Sequence[float | str | bool]
     row_names: Sequence[float | str | bool]
     content: Sequence[Sequence[float | str | bool]]
+    table_title: str | None = None
     table_style: TableColorConfig | None = None
     metadata: Dict[str, Any] = field(default_factory=dict)
     kind: DataKind = DataKind.TABLE
@@ -60,6 +61,7 @@ class TableDataset:
             tuple(self.column_names),
             tuple(self.row_names),
             tuple(tuple(row) for row in self.content),
+            self.table_title,
             self.table_style.cache_key() if self.table_style else None,
         )
 

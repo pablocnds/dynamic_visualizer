@@ -209,6 +209,7 @@ def test_table_style_configuration_loads_with_row_column_overrides(tmp_path: Pat
     payload = {
         "dataset": "styled_table",
         "data": {
+            "table_title": "Styled Metrics",
             "column_names": ["a", "b"],
             "row_names": ["r1", "r2"],
             "content": [[10, 20], [30, 40]],
@@ -225,6 +226,7 @@ def test_table_style_configuration_loads_with_row_column_overrides(tmp_path: Pat
     dataset = repo.load(table_path)
 
     assert isinstance(dataset, TableDataset)
+    assert dataset.table_title == "Styled Metrics"
     assert dataset.table_style is not None
     assert dataset.table_style.global_rule is not None
     assert dataset.table_style.global_rule.palette == "viridis"

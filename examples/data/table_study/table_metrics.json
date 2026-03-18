@@ -2,6 +2,7 @@
   "dataset": "table_metrics",
   "data": {
     "kind": "table",
+    "table_title": "Model Metrics",
     "column_names": ["accuracy", "latency_ms", "throughput"],
     "row_names": ["baseline", "exp_a", "exp_b"],
     "content": [

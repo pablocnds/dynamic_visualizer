@@ -1,10 +1,19 @@
 import pytest
 
 QtCore = pytest.importorskip("PySide6.QtCore", reason="PySide6 not installed; install requirements to run table renderer tests")
+QtWidgets = pytest.importorskip("PySide6.QtWidgets", reason="PySide6 not installed; install requirements to run table renderer tests")
 
 from visualizer.interpretation.specs import TableSpec
 from visualizer.table_style import TableColorConfig, TableColorRule
-from visualizer.viz.table_renderer import TableModel
+from visualizer.viz.table_renderer import TableModel, TableRenderer, TableView
+
+
+@pytest.fixture(scope="module")
+def app() -> QtWidgets.QApplication:
+    existing = QtWidgets.QApplication.instance()
+    if existing:
+        return existing
+    return QtWidgets.QApplication([])
 
 
 def _background_rgb(model: TableModel, row: int, column: int) -> tuple[int, int, int]:
@@ -22,7 +31,7 @@ def test_table_model_applies_custom_global_range() -> None:
         column_names=["a", "b"],
         row_names=["r1", "r2"],
         content=[[0, 100], [0, 100]],
-        table_style=TableColorConfig(global_rule=TableColorRule(range=(0.0, 200.0))),
+        table_style=TableColorConfig(global_rule=TableColorRule(value_range=(0.0, 200.0))),
     )
     model = TableModel(spec)
 
@@ -31,7 +40,8 @@ def test_table_model_applies_custom_global_range() -> None:
     low_rgb = _background_rgb(model, 0, 0)
 
     assert mid_rgb != low_rgb
-    assert mid_rgb[0] > low_rgb[0]
+    assert mid_rgb[0] < low_rgb[0]
+    assert mid_rgb[1] < low_rgb[1]
     assert mid_rgb[2] < low_rgb[2]
 
 
@@ -41,11 +51,11 @@ def test_table_model_row_column_rules_override_global() -> None:
         label=None,
         column_names=["a", "b"],
         row_names=["r1", "r2"],
-        content=[[50, 100], [50, 100]],
+        content=[[50, 150], [50, 150]],
         table_style=TableColorConfig(
             global_rule=TableColorRule(palette="viridis", value_range=(0.0, 100.0)),
             row_rules=(None, TableColorRule(palette="plasma")),
-            column_rules=(None, TableColorRule(range=(0.0, 200.0))),
+            column_rules=(None, TableColorRule(value_range=(0.0, 200.0))),
         ),
     )
     model = TableModel(spec)
@@ -58,3 +68,40 @@ def test_table_model_row_column_rules_override_global() -> None:
     # Row override palette should change row 1, even with same value.
     col0_row1 = _background_rgb(model, 1, 0)
     assert col0_row1 != col0_row0
+
+
+def test_table_view_shows_compact_title_when_available(app: QtWidgets.QApplication) -> None:  # noqa: ARG001
+    renderer = TableRenderer()
+    view = TableView()
+    spec = TableSpec(
+        dataset_id="table",
+        label="Compact Header",
+        column_names=["a"],
+        row_names=["r1"],
+        content=[[1]],
+    )
+
+    renderer.render(view, spec)
+
+    assert view.table_title() == "Compact Header"
+    margins = view.viewportMargins()
+    assert margins.top() > 0
+    assert margins.top() <= 20
+
+
+def test_table_view_hides_title_when_label_missing(app: QtWidgets.QApplication) -> None:  # noqa: ARG001
+    renderer = TableRenderer()
+    view = TableView()
+    spec = TableSpec(
+        dataset_id="table",
+        label=None,
+        column_names=["a"],
+        row_names=["r1"],
+        content=[[1]],
+    )
+
+    renderer.render(view, spec)
+
+    assert view.table_title() == ""
+    margins = view.viewportMargins()
+    assert margins.top() == 0

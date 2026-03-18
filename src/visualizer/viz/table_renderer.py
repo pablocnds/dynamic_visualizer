@@ -196,6 +196,38 @@ class TableView(QtWidgets.QTableView):
         super().__init__()
         self.pivot_handler: Callable[[int], bool] | None = None
         self.navigation_handler: Callable[[int], bool] | None = None
+        self._title_label = QtWidgets.QLabel(self)
+        self._title_label.setObjectName("tableTitleLabel")
+        self._title_label.setVisible(False)
+        self._title_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+        self._title_label.setContentsMargins(4, 0, 4, 0)
+        self._title_height = 18
+
+    def set_table_title(self, title: str | None) -> None:
+        text = (title or "").strip()
+        if text:
+            self._title_label.setText(text)
+            self._title_label.setVisible(True)
+            self.setViewportMargins(0, self._title_height, 0, 0)
+        else:
+            self._title_label.clear()
+            self._title_label.setVisible(False)
+            self.setViewportMargins(0, 0, 0, 0)
+        self._position_title_label()
+
+    def table_title(self) -> str:
+        return self._title_label.text()
+
+    def resizeEvent(self, event: QtGui.QResizeEvent) -> None:  # type: ignore[override]
+        super().resizeEvent(event)
+        self._position_title_label()
+
+    def _position_title_label(self) -> None:
+        if not self._title_label.isVisible():
+            return
+        frame = self.frameWidth()
+        width = max(0, self.width() - (frame * 2))
+        self._title_label.setGeometry(frame, frame, width, self._title_height)
 
     def keyPressEvent(self, event: QtGui.QKeyEvent) -> None:  # type: ignore[override]
         if event.key() in (QtCore.Qt.Key_Left, QtCore.Qt.Key_Right) and self.pivot_handler:
@@ -217,6 +249,8 @@ class TableRenderer:
     def render(self, view: QtWidgets.QTableView, spec: TableSpec) -> None:
         model = TableModel(spec)
         view.setModel(model)
+        if isinstance(view, TableView):
+            view.set_table_title(spec.label)
         view.setAlternatingRowColors(True)
         view.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         view.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)

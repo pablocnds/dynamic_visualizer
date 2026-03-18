@@ -172,6 +172,7 @@ class DatasetRepository:
             column_names=column_names,
             row_names=row_names,
             content=content,
+            table_title=self._coerce_optional_text(data_section.get("table_title")),
             table_style=table_style,
             metadata={k: v for k, v in payload.items() if k != "data"},
         )
@@ -316,6 +317,13 @@ class DatasetRepository:
             text = text.strip()
             info.append(text if text else None)
         return info
+
+    @staticmethod
+    def _coerce_optional_text(value: object | None) -> str | None:
+        if value is None:
+            return None
+        text = str(value).strip()
+        return text or None
 
     @staticmethod
     def _validate_axis_lengths(

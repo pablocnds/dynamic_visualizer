@@ -6,7 +6,7 @@ Interactive framework for loading processed analytical datasets (JSON) and rende
 1. `python3 -m venv .venv && source .venv/bin/activate`
 2. `pip install -e ".[dev]"`
 3. Launch the GUI via `dynamic-visualizer` (or `python -m visualizer`).
-4. Use the File menu to open a data folder (or add individual files) to populate the sidebar. Use File > Open Card File to load card definitions for the session (last-used paths are remembered across runs; if the previously selected card file is missing, the app restores the last card directory instead).
+4. Use the File menu to open a data folder (or add individual files) to populate the sidebar. Use File > Open Card File to load card definitions for the session (last-used paths are remembered across runs; if the previously selected card file is missing, the app restores the last card directory instead). Use File > Open Previous Session to reopen any remembered recent session.
 5. Follow `docs/development_guide.md` (architecture/roadmap) and `docs/card_specification.md` (card format) as you extend the project.
 
 ## Local Packaging
@@ -15,11 +15,12 @@ Interactive framework for loading processed analytical datasets (JSON) and rende
 
 ## Data Formats
 - JSON inputs must satisfy `src/visualizer/schema/data_payload.schema.json` (packaged as `visualizer/schema/data_payload.schema.json`).
-- Series data uses `x_axis` with an optional `y_axis`; table data uses `column_names`/`row_names` with a row-major `content` matrix and optional `table_style`; range data uses `ranges` as `[start, end]` pairs along the X axis and optional `range_info` entries for hover tooltips.
+- Series data uses `x_axis` with an optional `y_axis`; table data uses `column_names`/`row_names` with a row-major `content` matrix plus optional `table_title` and `table_style`; range data uses `ranges` as `[start, end]` pairs along the X axis and optional `range_info` entries for hover tooltips.
 - `data.kind` is optional (`series`, `table`, or `ranges`); when omitted the loader auto-detects based on the available fields (range payloads warn when `data.kind` is missing).
 - CSV support is temporarily disabled and will return in a future update.
 
 Once the GUI is running, use File > Open Data Folder to list JSON files (recursive), or File > Add Data File to add files directly. The sidebar shows either data files or cards depending on what you last loaded; you can collapse it from View > Collapse Sidebar or the toggle button in the sidebar header. The sidebar includes a “loaded files” box that lists the data file(s) used by the current view. Use View > Visualization Mode to override the automatic plot type selection. Use the “Reset View” button if you pan/zoom and want to snap the axes back to the current data bounds.
+Recent sessions are validated on startup/menu refresh; entries pointing to removed paths or empty card/data folders are automatically dropped.
 
 ## Cards
 - Card prototypes can live anywhere. Use File > Open Card File to list available cards. Supported types include the simple wildcard card, the multi-variable (single path) card that cycles via `pivot_chart`, overlays (card 5), and composite cards with multiple subcards (cards 3, 4, 6) that may each specify different visualization styles.
@@ -29,7 +30,7 @@ Once the GUI is running, use File > Open Data Folder to list JSON files (recursi
 - Keyboard shortcuts: when a card is selected, use the left/right arrow keys to move to the previous/next visualization. Use up/down arrows to move through the current sidebar list (cards or files), even when the sidebar is collapsed.
 - `5-overlay_card.toml` demonstrates overlaying multiple series in a single chart by supplying arrays in `filepath`/`chart_style` (fully supported; see `docs/card_specification.md`).
 - `13-stick_card.toml` demonstrates a mass-spectrometry-style stick spectrum (`chart_style = { name = "stick", ... }`).
-- `14-table_style_card.toml` demonstrates table color customization with JSON-defined row/column styles and card-level global fallback.
+- `14-table_style_card.toml` demonstrates table color customization with JSON-defined row/column styles, card-level global fallback, and a card-level compact table title via `series_label`.
 - Compound cards may optionally set `synchronize_axis = true` in `[global]` to keep X-axes linked and hide redundant axes on upper plots.
 - Cards may set `show_x_axis`/`show_y_axis` globally or per subcard to control axis visibility; with `synchronize_axis = true`, X axes are hidden by default unless explicitly enabled.
 - Card behavior and schema are described in `docs/card_specification.md`.

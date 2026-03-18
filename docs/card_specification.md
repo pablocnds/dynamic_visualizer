@@ -15,6 +15,7 @@ TOML cards describe where to find datasets and how to render them. Variables are
 - Axis visibility: `show_x_axis` and `show_y_axis` can be set globally or per subcard to explicitly show/hide axes for plot panels. When `synchronize_axis = true`, X axes are hidden by default unless explicitly enabled. `show_x_axis` controls the 1-D top overlay axis as well as the 2-D bottom axis; `show_y_axis` applies only to 2-D plots.
 - Table style: optional `table_style = { palette = "...", range = [min, max] }` can be set globally or per subcard for table datasets. JSON row/column table style overrides still take precedence over this card-level global fallback.
 - Overlay discovery: `overlay_variable` marks a variable used only for overlay enumeration; it is not user-selectable and is removed from card variables/pivot logic. Variable-level filters (see below) apply to overlay variables as well; optional `overlay_path_filter` (regex on the resolved path) can further constrain entries.
+- Overlay labels: optional `series_label` (string or list) names filepath entries. For table datasets, this label is shown as the compact table title.
 
 ## Global Section (optional)
 ```toml

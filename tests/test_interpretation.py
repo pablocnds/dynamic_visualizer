@@ -66,6 +66,7 @@ def test_table_spec_builds_from_dataset() -> None:
         column_names=["a", "b"],
         row_names=[1, 2],
         content=[[10, 20], [30, 40]],
+        table_title="Compact Table Title",
     )
     interpreter = DefaultInterpreter()
 
@@ -74,6 +75,7 @@ def test_table_spec_builds_from_dataset() -> None:
     assert isinstance(spec, TableSpec)
     assert list(spec.column_names) == ["a", "b"]
     assert list(spec.row_names) == [1, 2]
+    assert spec.label == "Compact Table Title"
 
 
 def test_range_spec_builds_from_dataset() -> None:

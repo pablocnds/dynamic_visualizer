@@ -143,7 +143,7 @@ class DefaultInterpreter:
         merged_style = merge_table_color_config(dataset.table_style, table_style_global_override)
         return TableSpec(
             dataset_id=dataset.identifier,
-            label=label or dataset.identifier,
+            label=label or dataset.table_title,
             column_names=list(dataset.column_names),
             row_names=list(dataset.row_names),
             content=[list(row) for row in dataset.content],

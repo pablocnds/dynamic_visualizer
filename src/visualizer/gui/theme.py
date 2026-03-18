@@ -262,6 +262,15 @@ QTableView {{
   selection-color: {colors["text"]};
 }}
 
+#tableTitleLabel {{
+  color: {colors["muted_text"]};
+  background: {colors["surface_alt"]};
+  border-bottom: 1px solid {colors["border"]};
+  font-size: 11px;
+  font-weight: 600;
+  padding: 0 4px;
+}}
+
 #cardVariablesGroup QLabel {{
   color: {colors["text"]};
 }}

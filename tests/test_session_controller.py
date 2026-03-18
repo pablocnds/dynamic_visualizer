@@ -101,6 +101,30 @@ chart_style = "line"
     assert "table data cannot use chart_style 'line'" in incompatible[0]
 
 
+def test_build_panel_plans_applies_series_label_to_table_entry(tmp_path: Path) -> None:
+    cards_dir = tmp_path / "cards"
+    card_path = cards_dir / "table_label.toml"
+    _write_table(cards_dir / "data" / "table.json")
+    cards_dir.mkdir(parents=True, exist_ok=True)
+    card_path.write_text(
+        """
+filepath = ["<CARD_DIR>/data/table.json"]
+series_label = "Card Table Title"
+"""
+    )
+
+    controller = SessionController(DatasetRepository(), cards_dir=cards_dir)
+    controller.activate_card(card_path)
+    plans, missing, incompatible = controller.build_panel_plans()
+
+    assert missing == []
+    assert incompatible == []
+    assert len(plans) == 1
+    assert len(plans[0].series) == 1
+    assert plans[0].series[0].dataset is not None
+    assert plans[0].series[0].label == "Card Table Title"
+
+
 def test_build_panel_plans_reports_missing_subcard_for_active_selection(tmp_path: Path) -> None:
     cards_dir = tmp_path / "cards"
     card_path = cards_dir / "partial_subcards.toml"

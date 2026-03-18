@@ -1,8 +1,10 @@
 # Table style example:
 # - JSON defines global, row, and column color rules.
 # - Card-level table_style acts as global fallback only.
+# - `series_label` acts as card-level compact table title override.
 
 [global]
 table_style = { palette = "magma", range = [0, 120] }
 
-filepath = "<CARD_DIR>/../data/table_study/table_metrics.json"
+filepath = ["<CARD_DIR>/../data/table_study/table_metrics.json"]
+series_label = "Table Metrics (Card Title)"

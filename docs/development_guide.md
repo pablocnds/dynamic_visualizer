@@ -19,7 +19,7 @@ Desktop GUI (PySide6 + PyQtGraph) that loads JSON data, infers sensible defaults
 
 ## Data Contracts
 - JSON series: must match `src/visualizer/schema/data_payload.schema.json` (`data.x_axis` required; optional `data.y_axis` must match length when present); non-numeric Y is rejected; labels are optional. Eventline plots ignore `data.y_axis`.
-- JSON tables: use `data.column_names`/`data.row_names` with a row-major `data.content` matrix; lengths must match. Optional `data.table_title` displays a compact title above table views. Optional `data.table_style` can define a global rule plus row/column overrides, including `reverse = true` to flip numeric gradients (row/column arrays must match table dimensions exactly).
+- JSON tables: use flat `data.column_names` or grouped `data.column_headers` together with `data.row_names` and a row-major `data.content` matrix; lengths must match the flattened leaf columns. Optional `data.table_title` displays a compact title above table views. Optional `data.table_style` can define a global rule plus row/column overrides, including `reverse = true` to flip numeric gradients; column rules still target flattened leaf columns even when grouped headers are used.
 - JSON ranges: use `data.ranges` as an array of `[start, end]` pairs (numeric); optional `data.range_info` entries (same length as `ranges`) are shown in an instant floating hover info box that follows the cursor while it stays inside a range; use `data.kind = "ranges"` to avoid warnings (legacy `data.kind = "range"` still loads with a warning).
 - `data.kind` is optional (`series`, `table`, or `ranges`); when omitted the loader auto-detects based on the available fields.
 - CSV is temporarily disabled and will return in a future update.

@@ -1,0 +1,7 @@
+# Grouped table header example:
+# - JSON defines mixed grouped and regular columns via `column_headers`.
+# - Leaf columns still drive content width and per-column table_style rules.
+# - `series_label` acts as a compact table title override.
+
+filepath = ["<CARD_DIR>/../data/table_study/grouped_model_metrics.json"]
+series_label = "Grouped Model Comparison"

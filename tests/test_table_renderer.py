@@ -3,6 +3,7 @@ import pytest
 QtCore = pytest.importorskip("PySide6.QtCore", reason="PySide6 not installed; install requirements to run table renderer tests")
 QtWidgets = pytest.importorskip("PySide6.QtWidgets", reason="PySide6 not installed; install requirements to run table renderer tests")
 
+from visualizer.data.models import TableColumnGroup
 from visualizer.interpretation.specs import TableSpec
 from visualizer.table_style import TableColorConfig, TableColorRule
 from visualizer.viz.table_renderer import TableModel, TableRenderer, TableView
@@ -99,6 +100,30 @@ def test_table_model_reverse_flips_numeric_palette_direction() -> None:
     assert _background_rgb(normal_model, 0, 1) == _background_rgb(reverse_model, 0, 0)
 
 
+def test_table_model_preserves_grouped_header_metadata() -> None:
+    spec = TableSpec(
+        dataset_id="table-grouped",
+        label=None,
+        column_names=["precision", "AUC", "winner", "precision", "recall"],
+        row_names=["r1"],
+        content=[[0.91, 0.95, "Model 1", 0.89, 0.87]],
+        column_groups=[
+            TableColumnGroup(label="Model 1", subcolumns=["precision", "AUC"]),
+            TableColumnGroup(label="winner"),
+            TableColumnGroup(label="Model 2", subcolumns=["precision", "recall"]),
+        ],
+    )
+    model = TableModel(spec)
+
+    assert model.has_grouped_headers() is True
+    groups = model.column_groups()
+    assert len(groups) == 3
+    assert groups[0].label == "Model 1"
+    assert list(groups[0].subcolumns) == ["precision", "AUC"]
+    assert groups[1].label == "winner"
+    assert list(groups[1].subcolumns) == []
+
+
 def test_table_view_shows_compact_title_when_available(app: QtWidgets.QApplication) -> None:  # noqa: ARG001
     renderer = TableRenderer()
     view = TableView()
@@ -116,6 +141,38 @@ def test_table_view_shows_compact_title_when_available(app: QtWidgets.QApplicati
     margins = view.viewportMargins()
     assert margins.top() > 0
     assert margins.top() <= 20
+
+
+def test_grouped_table_view_uses_taller_header(app: QtWidgets.QApplication) -> None:  # noqa: ARG001
+    renderer = TableRenderer()
+    flat_view = TableView()
+    flat_spec = TableSpec(
+        dataset_id="flat-table",
+        label=None,
+        column_names=["a", "b"],
+        row_names=["r1"],
+        content=[[1, 2]],
+    )
+    renderer.render(flat_view, flat_spec)
+
+    grouped_view = TableView()
+    grouped_spec = TableSpec(
+        dataset_id="grouped-table",
+        label=None,
+        column_names=["precision", "AUC", "winner", "precision", "recall"],
+        row_names=["r1"],
+        content=[[0.91, 0.95, "Model 1", 0.89, 0.87]],
+        column_groups=[
+            TableColumnGroup(label="Model 1", subcolumns=["precision", "AUC"]),
+            TableColumnGroup(label="winner"),
+            TableColumnGroup(label="Model 2", subcolumns=["precision", "recall"]),
+        ],
+    )
+    renderer.render(grouped_view, grouped_spec)
+
+    assert grouped_view.grouped_header().has_grouped_headers() is True
+    assert grouped_view.horizontalHeader().height() > flat_view.horizontalHeader().height()
+    assert len(grouped_view.grouped_header().column_groups()) == 3
 
 
 def test_table_view_hides_title_when_label_missing(app: QtWidgets.QApplication) -> None:  # noqa: ARG001

@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from visualizer.data.models import Dataset, RangeDataset, TableDataset
+from visualizer.data.models import Dataset, RangeDataset, TableColumnGroup, TableDataset
 from visualizer.interpretation.specs import DefaultInterpreter, TableSpec, VisualizationType
 from visualizer.table_style import TableColorConfig, TableColorRule
 
@@ -76,6 +76,32 @@ def test_table_spec_builds_from_dataset() -> None:
     assert list(spec.column_names) == ["a", "b"]
     assert list(spec.row_names) == [1, 2]
     assert spec.label == "Compact Table Title"
+
+
+def test_table_spec_preserves_grouped_column_metadata() -> None:
+    dataset = TableDataset(
+        identifier="table",
+        source_path=Path("dummy"),
+        column_names=["precision", "AUC", "winner", "precision", "recall"],
+        row_names=[1],
+        content=[[0.91, 0.95, "Model 1", 0.89, 0.87]],
+        column_groups=[
+            TableColumnGroup(label="Model 1", subcolumns=["precision", "AUC"]),
+            TableColumnGroup(label="winner"),
+            TableColumnGroup(label="Model 2", subcolumns=["precision", "recall"]),
+        ],
+    )
+    interpreter = DefaultInterpreter()
+
+    spec = interpreter.build_spec(dataset)
+
+    assert isinstance(spec, TableSpec)
+    assert spec.column_groups is not None
+    assert len(spec.column_groups) == 3
+    assert spec.column_groups[0].label == "Model 1"
+    assert list(spec.column_groups[0].subcolumns) == ["precision", "AUC"]
+    assert spec.column_groups[1].label == "winner"
+    assert list(spec.column_groups[1].subcolumns) == []
 
 
 def test_range_spec_builds_from_dataset() -> None:

@@ -15,7 +15,7 @@ Interactive framework for loading processed analytical datasets (JSON) and rende
 
 ## Data Formats
 - JSON inputs must satisfy `src/visualizer/schema/data_payload.schema.json` (packaged as `visualizer/schema/data_payload.schema.json`).
-- Series data uses `x_axis` with an optional `y_axis`; table data uses `column_names`/`row_names` with a row-major `content` matrix plus optional `table_title` and `table_style`; range data uses `ranges` as `[start, end]` pairs along the X axis and optional `range_info` entries for an instant floating hover info box.
+- Series data uses `x_axis` with an optional `y_axis`; table data uses either flat `column_names` or grouped `column_headers` plus `row_names` and a row-major `content` matrix, with optional `table_title` and `table_style`; range data uses `ranges` as `[start, end]` pairs along the X axis and optional `range_info` entries for an instant floating hover info box.
 - `data.kind` is optional (`series`, `table`, or `ranges`); when omitted the loader auto-detects based on the available fields (range payloads warn when `data.kind` is missing).
 - CSV support is temporarily disabled and will return in a future update.
 
@@ -32,6 +32,7 @@ Recent sessions are validated on startup/menu refresh; entries pointing to remov
 - `13-stick_card.toml` demonstrates a mass-spectrometry-style stick spectrum (`chart_style = { name = "stick", ... }`).
 - `8-colormap_card.toml` and `9-eventline_card.toml` demonstrate style arguments for one-dimensional cards, including palette reversal.
 - `14-table_style_card.toml` demonstrates table color customization with JSON-defined row/column styles, reversible numeric gradients, card-level global fallback, and a card-level compact table title via `series_label`.
+- `15-grouped_table_card.toml` demonstrates grouped table headers with mixed grouped/regular columns; `table_style.columns` still maps to the flattened leaf columns.
 - Compound cards may optionally set `synchronize_axis = true` in `[global]` to keep X-axes linked and hide redundant axes on upper plots.
 - Cards may set `show_x_axis`/`show_y_axis` globally or per subcard to control axis visibility; with `synchronize_axis = true`, X axes are hidden by default unless explicitly enabled.
 - Card behavior and schema are described in `docs/card_specification.md`; quick templates/options are summarized in `docs/cards_reference.md`.

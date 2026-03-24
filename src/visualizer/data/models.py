@@ -41,6 +41,27 @@ class Dataset:
 
 
 @dataclass(frozen=True)
+class TableColumnGroup:
+    """Display grouping for table columns.
+
+    When ``subcolumns`` is empty, the group represents a regular single column.
+    When ``subcolumns`` is populated, ``label`` is the top-level group label and
+    the subcolumn entries define the flattened leaf columns.
+    """
+
+    label: float | str | bool
+    subcolumns: Sequence[float | str | bool] = field(default_factory=tuple)
+
+    def leaf_labels(self) -> tuple[float | str | bool, ...]:
+        if self.subcolumns:
+            return tuple(self.subcolumns)
+        return (self.label,)
+
+    def cache_key(self) -> tuple[Any, ...]:
+        return (self.label, tuple(self.subcolumns))
+
+
+@dataclass(frozen=True)
 class TableDataset:
     """Canonical representation of tabular data for table views."""
 
@@ -49,6 +70,7 @@ class TableDataset:
     column_names: Sequence[float | str | bool]
     row_names: Sequence[float | str | bool]
     content: Sequence[Sequence[float | str | bool]]
+    column_groups: Sequence[TableColumnGroup] | None = None
     table_title: str | None = None
     table_style: TableColorConfig | None = None
     metadata: Dict[str, Any] = field(default_factory=dict)
@@ -61,6 +83,7 @@ class TableDataset:
             tuple(self.column_names),
             tuple(self.row_names),
             tuple(tuple(row) for row in self.content),
+            tuple(group.cache_key() for group in self.column_groups) if self.column_groups else None,
             self.table_title,
             self.table_style.cache_key() if self.table_style else None,
         )

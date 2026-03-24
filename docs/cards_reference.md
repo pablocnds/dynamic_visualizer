@@ -143,7 +143,7 @@ filepath = ["<CARD_DIR>/../data/.../table.json"]
 series_label = "Model Metrics"
 ```
 
-JSON can also provide `data.table_title`, and row/column-specific `data.table_style`.
+JSON can also provide `data.table_title`, grouped `data.column_headers`, and row/column-specific `data.table_style` (column rules still target flattened leaf columns).
 - For palette-driven styles, `reverse = true` flips the palette direction without changing the palette name.
 
 ## 6. Behavior Notes

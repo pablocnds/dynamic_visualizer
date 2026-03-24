@@ -162,6 +162,20 @@ def test_range_overlay_renders_items(app: QtWidgets.QApplication) -> None:  # no
     assert "#plotHoverInfoBox" in window.styleSheet()
 
 
+def test_grouped_table_card_renders_grouped_header(app: QtWidgets.QApplication) -> None:  # noqa: ARG001
+    window = _create_window()
+    card_path = window._cards_dir / "15-grouped_table_card.toml"  # type: ignore[attr-defined]
+    window._activate_card(card_path)
+    tables = window._panel_manager.table_views()  # type: ignore[attr-defined]
+
+    assert len(tables) == 1
+    table = tables[0]
+    assert table.model() is not None
+    assert table.grouped_header().has_grouped_headers() is True
+    assert len(table.grouped_header().column_groups()) == 3
+    assert table.table_title() == "Grouped Model Comparison"
+
+
 def test_colorbars_absent_after_rerender(app: QtWidgets.QApplication) -> None:  # noqa: ARG001
     window = _create_window()
     window._activate_card(window._cards_dir / "10-overlay_1d_card.toml")  # type: ignore[attr-defined]

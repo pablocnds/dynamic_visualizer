@@ -91,6 +91,50 @@ def test_load_table_dataset(tmp_path: Path) -> None:
     assert dataset.content[0][0] == 10.0
 
 
+def test_load_grouped_table_dataset_flattens_column_headers(tmp_path: Path) -> None:
+    table_path = tmp_path / "grouped_table.json"
+    payload = {
+        "dataset": "grouped_table_demo",
+        "data": {
+            "column_headers": [
+                {"label": "Model 1", "subcolumns": ["precision", "AUC", "recall"]},
+                {"label": "winner"},
+                {"label": "Model 2", "subcolumns": ["precision", "recall"]},
+            ],
+            "row_names": ["fold_1", "fold_2"],
+            "content": [
+                [0.91, 0.95, 0.88, "Model 1", 0.89, 0.87],
+                [0.92, 0.96, 0.90, "Model 2", 0.90, 0.88],
+            ],
+            "table_style": {
+                "columns": [
+                    {"range": [0, 1]},
+                    {"range": [0, 1]},
+                    {"range": [0, 1]},
+                    None,
+                    {"range": [0, 1]},
+                    {"range": [0, 1]},
+                ]
+            },
+        },
+    }
+    table_path.write_text(json.dumps(payload))
+    repo = DatasetRepository()
+
+    dataset = repo.load(table_path)
+
+    assert isinstance(dataset, TableDataset)
+    assert list(dataset.column_names) == ["precision", "AUC", "recall", "winner", "precision", "recall"]
+    assert dataset.column_groups is not None
+    assert len(dataset.column_groups) == 3
+    assert dataset.column_groups[0].label == "Model 1"
+    assert list(dataset.column_groups[0].subcolumns) == ["precision", "AUC", "recall"]
+    assert dataset.column_groups[1].label == "winner"
+    assert list(dataset.column_groups[1].subcolumns) == []
+    assert dataset.table_style is not None
+    assert len(dataset.table_style.column_rules) == 6
+
+
 def test_load_range_dataset(tmp_path: Path) -> None:
     range_path = tmp_path / "ranges.json"
     payload = {
@@ -201,6 +245,44 @@ def test_table_validation_rejects_mismatched_dimensions(tmp_path: Path) -> None:
     repo = DatasetRepository()
 
     with pytest.raises(ValueError):
+        repo.load(bad_table)
+
+
+def test_grouped_table_validation_rejects_duplicate_header_sources(tmp_path: Path) -> None:
+    bad_table = tmp_path / "bad_grouped_table.json"
+    payload = {
+        "data": {
+            "column_names": ["a", "b"],
+            "column_headers": [
+                {"label": "Model 1", "subcolumns": ["precision", "recall"]},
+            ],
+            "row_names": [1],
+            "content": [[10, 20]],
+        },
+    }
+    bad_table.write_text(json.dumps(payload))
+    repo = DatasetRepository()
+
+    with pytest.raises(ValueError, match="Use either 'column_names' or 'column_headers'"):
+        repo.load(bad_table)
+
+
+def test_grouped_table_validation_uses_flattened_leaf_count(tmp_path: Path) -> None:
+    bad_table = tmp_path / "bad_grouped_width.json"
+    payload = {
+        "data": {
+            "column_headers": [
+                {"label": "Model 1", "subcolumns": ["precision", "recall"]},
+                {"label": "winner"},
+            ],
+            "row_names": [1],
+            "content": [[10, 20]],
+        },
+    }
+    bad_table.write_text(json.dumps(payload))
+    repo = DatasetRepository()
+
+    with pytest.raises(ValueError, match="Column count mismatch in row 0 \\(expected 3\\)"):
         repo.load(bad_table)
 
 

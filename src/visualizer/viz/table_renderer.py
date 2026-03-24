@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import math
-from typing import Callable
+from typing import Callable, Sequence
 
 from PySide6 import QtCore, QtGui, QtWidgets
 
+from visualizer.data.models import TableColumnGroup
 from visualizer.interpretation.specs import TableSpec
 from visualizer.table_style import TableColorConfig
 
@@ -29,6 +30,7 @@ class TableModel(QtCore.QAbstractTableModel):
         self._rows = [list(row) for row in spec.content]
         self._row_names = [str(name) for name in spec.row_names]
         self._column_names = [str(name) for name in spec.column_names]
+        self._column_groups = self._normalize_column_groups(spec.column_names, spec.column_groups)
         self._table_style = spec.table_style or TableColorConfig()
         self._column_ranges = self._compute_column_ranges()
 
@@ -74,6 +76,28 @@ class TableModel(QtCore.QAbstractTableModel):
         if not index.isValid():
             return QtCore.Qt.NoItemFlags
         return QtCore.Qt.ItemIsEnabled | QtCore.Qt.ItemIsSelectable
+
+    def column_groups(self) -> tuple[TableColumnGroup, ...]:
+        return self._column_groups
+
+    def has_grouped_headers(self) -> bool:
+        return any(group.subcolumns for group in self._column_groups)
+
+    @staticmethod
+    def _normalize_column_groups(
+        column_names: Sequence[float | str | bool],
+        column_groups: Sequence[TableColumnGroup] | None,
+    ) -> tuple[TableColumnGroup, ...]:
+        if not column_groups:
+            return tuple(TableColumnGroup(label=name) for name in column_names)
+        normalized = tuple(
+            TableColumnGroup(label=group.label, subcolumns=tuple(group.subcolumns))
+            for group in column_groups
+        )
+        flattened = tuple(label for group in normalized for label in group.leaf_labels())
+        if flattened != tuple(column_names):
+            raise ValueError("TableSpec column_groups do not match flattened column_names")
+        return normalized
 
     def _compute_column_ranges(self) -> list[tuple[float | None, float | None]]:
         ranges: list[tuple[float | None, float | None]] = []
@@ -203,11 +227,143 @@ class TableModel(QtCore.QAbstractTableModel):
         return (endpoints[1], endpoints[0]) if reverse else endpoints
 
 
+class GroupedTableHeaderView(QtWidgets.QHeaderView):
+    def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
+        super().__init__(QtCore.Qt.Horizontal, parent)
+        self._column_groups: tuple[TableColumnGroup, ...] = ()
+        self.setDefaultAlignment(QtCore.Qt.AlignCenter)
+        self.setSectionsClickable(False)
+        self.setHighlightSections(False)
+        self.setStretchLastSection(False)
+
+    def set_column_groups(self, column_groups: Sequence[TableColumnGroup]) -> None:
+        self._column_groups = tuple(column_groups)
+        height = self._target_height()
+        self.setFixedHeight(height)
+        self.updateGeometry()
+        self.viewport().update()
+
+    def column_groups(self) -> tuple[TableColumnGroup, ...]:
+        return self._column_groups
+
+    def has_grouped_headers(self) -> bool:
+        return any(group.subcolumns for group in self._column_groups)
+
+    def sizeHint(self) -> QtCore.QSize:  # type: ignore[override]
+        size = super().sizeHint()
+        size.setHeight(self._target_height())
+        return size
+
+    def sectionSizeFromContents(self, logical_index: int) -> QtCore.QSize:  # type: ignore[override]
+        size = super().sectionSizeFromContents(logical_index)
+        size.setHeight(self._target_height())
+        return size
+
+    def paintEvent(self, event: QtGui.QPaintEvent) -> None:  # type: ignore[override]
+        if not self.has_grouped_headers():
+            super().paintEvent(event)
+            return
+        painter = QtWidgets.QStylePainter(self.viewport())
+        top_height = self._row_height()
+        bottom_height = max(0, self.height() - top_height)
+        visible_rect = event.rect()
+        logical_index = 0
+        for group in self._column_groups:
+            span = len(group.subcolumns) if group.subcolumns else 1
+            group_left = self.sectionViewportPosition(logical_index)
+            group_width = sum(self.sectionSize(logical_index + offset) for offset in range(span))
+            group_right = group_left + group_width
+            if group_right < visible_rect.left():
+                logical_index += span
+                continue
+            if group_left > visible_rect.right():
+                break
+
+            if group.subcolumns:
+                self._paint_header_cell(
+                    painter,
+                    QtCore.QRect(group_left, 0, group_width, top_height),
+                    str(group.label),
+                    logical_index,
+                    QtWidgets.QStyleOptionHeader.OnlyOneSection,
+                )
+                for offset, subcolumn in enumerate(group.subcolumns):
+                    section = logical_index + offset
+                    rect = QtCore.QRect(
+                        self.sectionViewportPosition(section),
+                        top_height,
+                        self.sectionSize(section),
+                        bottom_height,
+                    )
+                    self._paint_header_cell(
+                        painter,
+                        rect,
+                        str(subcolumn),
+                        section,
+                        self._section_position(offset, span),
+                    )
+            else:
+                self._paint_header_cell(
+                    painter,
+                    QtCore.QRect(group_left, 0, group_width, self.height()),
+                    str(group.label),
+                    logical_index,
+                    QtWidgets.QStyleOptionHeader.OnlyOneSection,
+                )
+            logical_index += span
+
+    def _paint_header_cell(
+        self,
+        painter: QtWidgets.QStylePainter,
+        rect: QtCore.QRect,
+        text: str,
+        section: int,
+        position: QtWidgets.QStyleOptionHeader.SectionPosition,
+    ) -> None:
+        option = QtWidgets.QStyleOptionHeader()
+        self.initStyleOption(option)
+        option.rect = rect
+        option.section = section
+        option.text = self.fontMetrics().elidedText(text, QtCore.Qt.ElideRight, max(0, rect.width() - 8))
+        option.textAlignment = int(self.defaultAlignment())
+        option.position = position
+        option.sortIndicator = QtWidgets.QStyleOptionHeader.SortIndicator.None_
+        option.state &= ~QtWidgets.QStyle.State_On
+        option.state &= ~QtWidgets.QStyle.State_Sunken
+        style = self.style()
+        style.drawControl(QtWidgets.QStyle.ControlElement.CE_HeaderSection, option, painter, self)
+        style.drawControl(QtWidgets.QStyle.ControlElement.CE_HeaderLabel, option, painter, self)
+
+    def _target_height(self) -> int:
+        row_height = self._row_height()
+        if self.has_grouped_headers():
+            return row_height * 2
+        return row_height
+
+    def _row_height(self) -> int:
+        return max(super().sizeHint().height(), self.fontMetrics().height() + 8)
+
+    @staticmethod
+    def _section_position(
+        offset: int,
+        span: int,
+    ) -> QtWidgets.QStyleOptionHeader.SectionPosition:
+        if span <= 1:
+            return QtWidgets.QStyleOptionHeader.OnlyOneSection
+        if offset == 0:
+            return QtWidgets.QStyleOptionHeader.Beginning
+        if offset == span - 1:
+            return QtWidgets.QStyleOptionHeader.End
+        return QtWidgets.QStyleOptionHeader.Middle
+
+
 class TableView(QtWidgets.QTableView):
     def __init__(self) -> None:
         super().__init__()
         self.pivot_handler: Callable[[int], bool] | None = None
         self.navigation_handler: Callable[[int], bool] | None = None
+        self._grouped_header = GroupedTableHeaderView(self)
+        self.setHorizontalHeader(self._grouped_header)
         self._title_label = QtWidgets.QLabel(self)
         self._title_label.setObjectName("tableTitleLabel")
         self._title_label.setVisible(False)
@@ -229,6 +385,12 @@ class TableView(QtWidgets.QTableView):
 
     def table_title(self) -> str:
         return self._title_label.text()
+
+    def set_column_groups(self, column_groups: Sequence[TableColumnGroup]) -> None:
+        self._grouped_header.set_column_groups(column_groups)
+
+    def grouped_header(self) -> GroupedTableHeaderView:
+        return self._grouped_header
 
     def resizeEvent(self, event: QtGui.QResizeEvent) -> None:  # type: ignore[override]
         super().resizeEvent(event)
@@ -263,6 +425,7 @@ class TableRenderer:
         view.setModel(model)
         if isinstance(view, TableView):
             view.set_table_title(spec.label)
+            view.set_column_groups(model.column_groups())
         view.setAlternatingRowColors(True)
         view.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         view.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)

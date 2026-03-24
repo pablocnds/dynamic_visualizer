@@ -1,0 +1,28 @@
+{
+  "dataset": "grouped_model_metrics",
+  "data": {
+    "kind": "table",
+    "table_title": "Grouped Model Metrics",
+    "column_headers": [
+      { "label": "Model 1", "subcolumns": ["precision", "AUC", "recall"] },
+      { "label": "winner" },
+      { "label": "Model 2", "subcolumns": ["precision", "recall"] }
+    ],
+    "row_names": ["baseline", "exp_a", "exp_b"],
+    "content": [
+      [0.81, 0.88, 0.76, "Model 1", 0.79, 0.74],
+      [0.86, 0.91, 0.83, "Model 2", 0.88, 0.86],
+      [0.84, 0.90, 0.80, "Model 1", 0.82, 0.78]
+    ],
+    "table_style": {
+      "columns": [
+        { "range": [0, 1] },
+        { "range": [0, 1], "palette": "plasma" },
+        { "range": [0, 1] },
+        null,
+        { "range": [0, 1], "palette": "cividis" },
+        { "range": [0, 1], "palette": "cividis" }
+      ]
+    }
+  }
+}

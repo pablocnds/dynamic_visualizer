@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Sequence
 
-from visualizer.data.models import DataPayload, Dataset, RangeDataset, TableDataset
+from visualizer.data.models import DataPayload, Dataset, RangeDataset, TableColumnGroup, TableDataset
 from visualizer.table_style import TableColorConfig, TableColorRule, merge_table_color_config
 
 
@@ -67,6 +67,7 @@ class TableSpec:
     column_names: Sequence[float | str | bool]
     row_names: Sequence[float | str | bool]
     content: Sequence[Sequence[float | str | bool]]
+    column_groups: Sequence[TableColumnGroup] | None = None
     table_style: TableColorConfig | None = None
 
     def cache_key(self) -> tuple:
@@ -76,6 +77,7 @@ class TableSpec:
             tuple(self.column_names),
             tuple(self.row_names),
             tuple(tuple(row) for row in self.content),
+            tuple(group.cache_key() for group in self.column_groups) if self.column_groups else None,
             self.table_style.cache_key() if self.table_style else None,
         )
 
@@ -147,6 +149,7 @@ class DefaultInterpreter:
             column_names=list(dataset.column_names),
             row_names=list(dataset.row_names),
             content=[list(row) for row in dataset.content],
+            column_groups=list(dataset.column_groups) if dataset.column_groups else None,
             table_style=merged_style,
         )
 

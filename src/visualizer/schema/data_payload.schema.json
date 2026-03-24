@@ -45,6 +45,14 @@
           },
           "description": "Column labels for table data"
         },
+        "column_headers": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/tableColumnHeader"
+          },
+          "description": "Optional grouped table header metadata. Leaf columns are flattened from this structure."
+        },
         "row_names": {
           "type": "array",
           "minItems": 1,
@@ -117,6 +125,7 @@
           "anyOf": [
             { "required": ["x_axis"] },
             { "required": ["column_names", "row_names", "content"] },
+            { "required": ["column_headers", "row_names", "content"] },
             { "required": ["ranges"] }
           ]
         }
@@ -124,6 +133,23 @@
     }
   },
   "$defs": {
+    "tableColumnHeader": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["label"],
+      "properties": {
+        "label": {
+          "type": ["number", "string"]
+        },
+        "subcolumns": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": ["number", "string"]
+          }
+        }
+      }
+    },
     "tableColorRule": {
       "type": "object",
       "additionalProperties": false,

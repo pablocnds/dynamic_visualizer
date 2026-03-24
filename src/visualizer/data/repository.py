@@ -12,7 +12,7 @@ try:
 except ImportError:  # pragma: no cover - optional dependency for schema validation
     jsonschema = None
 
-from .models import DataKind, DataPayload, Dataset, RangeDataset, TableDataset
+from .models import DataKind, DataPayload, Dataset, RangeDataset, TableColumnGroup, TableDataset
 from visualizer.table_style import parse_table_color_config
 
 SUPPORTED_EXTENSIONS = (".json",)
@@ -121,7 +121,7 @@ class DatasetRepository:
                 UserWarning,
             )
             return DataKind.RANGE
-        if any(key in data_section for key in ("column_names", "row_names", "content")):
+        if any(key in data_section for key in ("column_names", "column_headers", "row_names", "content")):
             return DataKind.TABLE
         return DataKind.SERIES
 
@@ -151,8 +151,8 @@ class DatasetRepository:
         )
 
     def _load_table_payload(self, payload: dict, data_section: dict, path: Path) -> TableDataset:
-        self._validate_table_payload(data_section, path)
-        column_names = self._coerce_sequence(list(data_section.get("column_names") or []))
+        column_names, column_groups = self._coerce_table_columns(data_section, path)
+        self._validate_table_payload(data_section, path, expected_cols=len(column_names))
         row_names = self._coerce_sequence(list(data_section.get("row_names") or []))
         raw_content = data_section.get("content") or []
         content = [self._coerce_sequence(list(row)) for row in raw_content]
@@ -172,6 +172,7 @@ class DatasetRepository:
             column_names=column_names,
             row_names=row_names,
             content=content,
+            column_groups=column_groups,
             table_title=self._coerce_optional_text(data_section.get("table_title")),
             table_style=table_style,
             metadata={k: v for k, v in payload.items() if k != "data"},
@@ -209,13 +210,25 @@ class DatasetRepository:
             if len(data_section["y_axis"]) == 0:
                 raise ValueError(f"'y_axis' cannot be empty when provided: {path}")
 
-    def _validate_table_payload(self, data_section: dict, path: Path) -> None:
-        if "column_names" not in data_section or "row_names" not in data_section or "content" not in data_section:
-            raise ValueError(f"JSON table payload missing 'column_names'/'row_names'/'content': {path}")
-        if not isinstance(data_section["column_names"], Sequence) or isinstance(
-            data_section["column_names"], (str, bytes)
+    def _validate_table_payload(self, data_section: dict, path: Path, *, expected_cols: int) -> None:
+        has_column_names = "column_names" in data_section
+        has_column_headers = "column_headers" in data_section
+        if not has_column_names and not has_column_headers:
+            raise ValueError(
+                f"JSON table payload missing 'column_names' or 'column_headers' with 'row_names'/'content': {path}"
+            )
+        if has_column_names and has_column_headers:
+            raise ValueError(f"Use either 'column_names' or 'column_headers', not both: {path}")
+        if has_column_names and (
+            not isinstance(data_section["column_names"], Sequence)
+            or isinstance(data_section["column_names"], (str, bytes))
         ):
             raise ValueError(f"'column_names' must be an array: {path}")
+        if has_column_headers and (
+            not isinstance(data_section["column_headers"], Sequence)
+            or isinstance(data_section["column_headers"], (str, bytes))
+        ):
+            raise ValueError(f"'column_headers' must be an array: {path}")
         if not isinstance(data_section["row_names"], Sequence) or isinstance(
             data_section["row_names"], (str, bytes)
         ):
@@ -224,11 +237,10 @@ class DatasetRepository:
             data_section["content"], (str, bytes)
         ):
             raise ValueError(f"'content' must be an array of rows: {path}")
-        if len(data_section["column_names"]) == 0 or len(data_section["row_names"]) == 0:
-            raise ValueError(f"'column_names'/'row_names' cannot be empty: {path}")
+        if expected_cols == 0 or len(data_section["row_names"]) == 0:
+            raise ValueError(f"Table columns/'row_names' cannot be empty: {path}")
         if len(data_section["content"]) == 0:
             raise ValueError(f"'content' cannot be empty: {path}")
-        expected_cols = len(data_section["column_names"])
         expected_rows = len(data_section["row_names"])
         if len(data_section["content"]) != expected_rows:
             raise ValueError(f"Row count mismatch between 'row_names' and 'content' in {path}")
@@ -239,6 +251,55 @@ class DatasetRepository:
                 raise ValueError(
                     f"Column count mismatch in row {idx} (expected {expected_cols}) in {path}"
                 )
+
+    def _coerce_table_columns(
+        self, data_section: dict, path: Path
+    ) -> tuple[List[float | str | bool], List[TableColumnGroup] | None]:
+        raw_column_headers = data_section.get("column_headers")
+        if raw_column_headers is not None:
+            groups = self._coerce_column_groups(raw_column_headers, path)
+            flattened: List[float | str | bool] = []
+            for group in groups:
+                flattened.extend(group.leaf_labels())
+            return flattened, groups
+        return self._coerce_sequence(list(data_section.get("column_names") or [])), None
+
+    def _coerce_column_groups(self, values: object, path: Path) -> List[TableColumnGroup]:
+        if not isinstance(values, Sequence) or isinstance(values, (str, bytes)):
+            raise ValueError(f"'column_headers' must be an array: {path}")
+        if len(values) == 0:
+            raise ValueError(f"'column_headers' cannot be empty: {path}")
+        groups: List[TableColumnGroup] = []
+        for idx, entry in enumerate(values):
+            if not isinstance(entry, dict):
+                raise ValueError(f"Column header entry {idx} must be an object in {path}")
+            unknown = set(entry.keys()) - {"label", "subcolumns"}
+            if unknown:
+                keys = ", ".join(sorted(str(key) for key in unknown))
+                raise ValueError(f"Column header entry {idx} has unsupported keys ({keys}) in {path}")
+            if "label" not in entry:
+                raise ValueError(f"Column header entry {idx} is missing 'label' in {path}")
+            label = self._coerce_header_label(entry.get("label"))
+            raw_subcolumns = entry.get("subcolumns")
+            if raw_subcolumns is None:
+                groups.append(TableColumnGroup(label=label))
+                continue
+            if not isinstance(raw_subcolumns, Sequence) or isinstance(raw_subcolumns, (str, bytes)):
+                raise ValueError(f"Column header entry {idx} 'subcolumns' must be an array in {path}")
+            if len(raw_subcolumns) == 0:
+                raise ValueError(f"Column header entry {idx} 'subcolumns' cannot be empty in {path}")
+            subcolumns = tuple(self._coerce_sequence(list(raw_subcolumns)))
+            groups.append(TableColumnGroup(label=label, subcolumns=subcolumns))
+        return groups
+
+    @staticmethod
+    def _coerce_header_label(value: object) -> float | str | bool:
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, (int, float)):
+            return float(value)
+        text = str(value).strip()
+        return text
 
     def _validate_range_payload(self, data_section: dict, path: Path) -> None:
         if "ranges" not in data_section:

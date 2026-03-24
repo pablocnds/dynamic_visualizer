@@ -20,7 +20,7 @@ For a concise template-oriented guide, see `docs/cards_reference.md`.
 - Range hover info: range datasets can provide `data.range_info` in JSON (one entry per range). Those values are shown in an instant floating hover box that follows the cursor and work in standalone range charts and overlays.
 - Synchronization: compound cards may set `synchronize_axis = true` under `[global]` to link the X axis across panels (panning/zooming one updates the others).
 - Axis visibility: `show_x_axis` and `show_y_axis` can be set globally or per subcard to explicitly show/hide axes for plot panels. When `synchronize_axis = true`, X axes are hidden by default unless explicitly enabled. `show_x_axis` controls the 1-D top overlay axis as well as the 2-D bottom axis; `show_y_axis` applies only to 2-D plots.
-- Table style: optional `table_style = { palette = "...", range = [min, max], reverse = true }` can be set globally or per subcard for table datasets. `reverse = true` flips the gradient direction. JSON row/column table style overrides still take precedence over this card-level global fallback.
+- Table style: optional `table_style = { palette = "...", range = [min, max], reverse = true }` can be set globally or per subcard for table datasets. `reverse = true` flips the gradient direction. JSON row/column table style overrides still take precedence over this card-level global fallback; when JSON uses grouped `data.column_headers`, column style rules still index the flattened leaf columns.
 - Overlay discovery: `overlay_variable` marks a variable used only for overlay enumeration; it is not user-selectable and is removed from card variables/pivot logic. Variable-level filters (see below) apply to overlay variables as well; optional `overlay_path_filter` (regex on the resolved path) can further constrain entries.
 - Overlay labels: optional `series_label` (string or list) names filepath entries. For table datasets, this label is shown as the compact table title.
 
@@ -66,6 +66,24 @@ filepath = "<CARD_DIR>/../data/.../{{DATASET}}/{{CLASS}}/scatter.json"
 [subcards.table_panel]
 filepath = "<CARD_DIR>/../data/.../{{DATASET}}/{{CLASS}}/table.json"
 table_style = { palette = "plasma", reverse = true }
+```
+
+Table JSON may also use grouped headers instead of flat `column_names`, for example:
+```json
+{
+  "data": {
+    "column_headers": [
+      { "label": "Model 1", "subcolumns": ["precision", "AUC", "recall"] },
+      { "label": "winner" },
+      { "label": "Model 2", "subcolumns": ["precision", "recall"] }
+    ],
+    "row_names": ["baseline", "exp_a"],
+    "content": [
+      [0.81, 0.88, 0.76, "Model 1", 0.79, 0.74],
+      [0.86, 0.91, 0.83, "Model 2", 0.88, 0.86]
+    ]
+  }
+}
 ```
 
 ## Overlays

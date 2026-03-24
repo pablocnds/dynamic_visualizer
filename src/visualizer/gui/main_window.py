@@ -52,6 +52,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._panel_axis_visibility: Dict[str, tuple[bool | None, bool | None]] = {}
         self._added_files: set[Path] = set()
         self._pending_card_file: Optional[Path] = None
+        self._pending_card_selection: Dict[str, str] | None = None
         self._last_variable_values: Dict[str, str] = {}
         self._view: MainWindowView | None = None
         self._visualization_override: VisualizationType | None = None
@@ -287,6 +288,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._card_loader = self._controller.card_loader
         self._card_list.clear()
         self._pending_card_file = None
+        self._pending_card_selection = None
         self._pending_data_file = None
         self._added_files.clear()
 
@@ -300,6 +302,7 @@ class MainWindow(QtWidgets.QMainWindow):
         card_file = snapshot.get("card_file")
         card_dir = snapshot.get("card_dir")
         data_file = snapshot.get("data_file")
+        card_selection = self._normalize_card_selection(snapshot.get("card_selection"))
         added_files = snapshot.get("added_files", [])
         if isinstance(data_dir, str):
             path = Path(data_dir)
@@ -316,10 +319,12 @@ class MainWindow(QtWidgets.QMainWindow):
         if isinstance(card_file, str):
             path = Path(card_file)
             if path.exists():
+                self._pending_card_selection = card_selection or None
                 self._pending_card_file = path
                 self._set_card_loader(path.parent, select_card=path)
                 card_file_restored = True
         if not card_file_restored and isinstance(card_dir, str):
+            self._pending_card_selection = None
             path = Path(card_dir)
             if path.exists() and path.is_dir():
                 self._set_card_loader(path)
@@ -409,11 +414,27 @@ class MainWindow(QtWidgets.QMainWindow):
             if valid_added:
                 normalized["added_files"] = valid_added
 
+        card_selection = self._normalize_card_selection(entry.get("card_selection"))
+        if card_selection:
+            normalized["card_selection"] = card_selection
+
         if "card_file" in normalized and "card_dir" not in normalized:
             normalized["card_dir"] = str(Path(normalized["card_file"]).parent)
 
         if not normalized:
             return None
+        return normalized
+
+    def _normalize_card_selection(self, selection: object) -> Dict[str, str]:
+        if not isinstance(selection, dict):
+            return {}
+        normalized: Dict[str, str] = {}
+        for variable, value in selection.items():
+            if not isinstance(variable, str) or not isinstance(value, str):
+                continue
+            if not variable or not value:
+                continue
+            normalized[variable] = value
         return normalized
 
     def _load_initial_sources(self) -> None:
@@ -702,12 +723,19 @@ class MainWindow(QtWidgets.QMainWindow):
         if path:
             self._activate_card(Path(path))
 
-    def _activate_card(self, card_path: Path) -> None:
+    def _activate_card(
+        self, card_path: Path, preferred_selection: Dict[str, str] | None = None
+    ) -> None:
+        selection = preferred_selection
+        if selection is None and self._pending_card_selection:
+            selection = dict(self._pending_card_selection)
+        elif selection is None and self._last_variable_values:
+            selection = dict(self._last_variable_values)
         try:
             self._sidebar_mode = "card"
             session = self._controller.activate_card(
                 card_path,
-                preferred_selection=self._last_variable_values if self._last_variable_values else None,
+                preferred_selection=selection,
             )
             self._card_loader = self._controller.card_loader
             if not session.has_paths():
@@ -736,6 +764,8 @@ class MainWindow(QtWidgets.QMainWindow):
             self._active_card_path = None
             self._update_loaded_files([])
             self._update_sidebar_mode()
+        finally:
+            self._pending_card_selection = None
 
     def _handle_next_view(self) -> None:
         self._handle_pivot_step(1)
@@ -823,6 +853,7 @@ class MainWindow(QtWidgets.QMainWindow):
                     break
         else:
             self._pending_card_file = None
+            self._pending_card_selection = None
         self._update_sidebar_mode()
 
     def _restore_state(self) -> None:
@@ -849,6 +880,8 @@ class MainWindow(QtWidgets.QMainWindow):
             snapshot["data_file"] = str(self._current_path.resolve())
         if self._active_card_path and self._active_card_path.exists():
             snapshot["card_file"] = str(self._active_card_path.resolve())
+            if self._card_session and self._card_session.selection:
+                snapshot["card_selection"] = dict(self._card_session.selection)
         elif self._pending_card_file and self._pending_card_file.exists():
             snapshot["card_file"] = str(self._pending_card_file.resolve())
         if self._cards_dir and self._cards_dir.exists():

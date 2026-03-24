@@ -6,7 +6,7 @@ Interactive framework for loading processed analytical datasets (JSON) and rende
 1. `python3 -m venv .venv && source .venv/bin/activate`
 2. `pip install -e ".[dev]"`
 3. Launch the GUI via `dynamic-visualizer` (or `python -m visualizer`).
-4. Use the File menu to open a data folder (or add individual files) to populate the sidebar. Use File > Open Card File to load card definitions for the session (last-used paths are remembered across runs; if the previously selected card file is missing, the app restores the last card directory instead). Use File > Open Previous Session to reopen any remembered recent session.
+4. Use the File menu to open a data folder (or add individual files) to populate the sidebar. Use File > Open Card File to load card definitions for the session (last-used paths and the active card selection are remembered across runs; if the previously selected card file is missing, the app restores the last card directory instead). Use File > Open Previous Session to reopen any remembered recent session.
 5. Follow `docs/development_guide.md` (architecture/roadmap), `docs/card_specification.md` (full spec), and `docs/cards_reference.md` (concise setup/customization guide) as you extend the project.
 
 ## Local Packaging
@@ -20,7 +20,7 @@ Interactive framework for loading processed analytical datasets (JSON) and rende
 - CSV support is temporarily disabled and will return in a future update.
 
 Once the GUI is running, use File > Open Data Folder to list JSON files (recursive), or File > Add Data File to add files directly. The sidebar shows either data files or cards depending on what you last loaded; you can collapse it from View > Collapse Sidebar or the toggle button in the sidebar header. The sidebar includes a “loaded files” box that lists the data file(s) used by the current view. Use View > Visualization Mode to override the automatic plot type selection. Use the “Reset View” button if you pan/zoom and want to snap the axes back to the current data bounds.
-Recent sessions are validated on startup/menu refresh; entries pointing to removed paths or empty card/data folders are automatically dropped.
+Recent sessions are validated on startup/menu refresh; entries pointing to removed paths or empty card/data folders are automatically dropped. Restored card sessions reopen with their last saved variable selection when that selection is still valid for the card.
 
 ## Cards
 - Card prototypes can live anywhere. Use File > Open Card File to list available cards. Supported types include the simple wildcard card, the multi-variable (single path) card that cycles via `pivot_chart`, overlays (card 5), and composite cards with multiple subcards (cards 3, 4, 6) that may each specify different visualization styles.

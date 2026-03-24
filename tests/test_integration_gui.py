@@ -346,3 +346,63 @@ def test_save_state_persists_recent_sessions_history(
     assert len(recent) >= 2
     assert recent[0]["data_dir"] == str(data_a.resolve())
     assert any(entry.get("data_dir") == str(data_b.resolve()) for entry in recent)
+
+
+def test_restore_state_restores_active_card_selection(
+    app: QtWidgets.QApplication, monkeypatch: pytest.MonkeyPatch  # noqa: ARG001
+) -> None:
+    card_path = Path("examples/cards/2-multivariable_card.toml").resolve()
+    saved_state = {
+        "card_file": str(card_path),
+        "card_selection": {
+            "DATASET": "dataset_beta",
+            "CLASS": "class_C",
+        },
+    }
+
+    monkeypatch.setattr("visualizer.gui.main_window.StateManager.load", lambda _self: saved_state)
+    monkeypatch.setattr("visualizer.gui.main_window.StateManager.save", lambda _self, _state: None)
+
+    window = MainWindow(data_dir=None, cards_dir=None)
+
+    session = window._card_session  # type: ignore[attr-defined]
+    assert session is not None
+    assert window._active_card_path == card_path  # type: ignore[attr-defined]
+    assert session.selection == {
+        "DATASET": "dataset_beta",
+        "CLASS": "class_C",
+    }
+
+
+def test_save_state_persists_active_card_selection(
+    app: QtWidgets.QApplication, monkeypatch: pytest.MonkeyPatch  # noqa: ARG001
+) -> None:
+    card_path = Path("examples/cards/2-multivariable_card.toml").resolve()
+    captured: dict[str, object] = {}
+
+    monkeypatch.setattr("visualizer.gui.main_window.StateManager.load", lambda _self: {})
+
+    def _capture_save(_self, state: dict) -> None:
+        captured["state"] = state
+
+    monkeypatch.setattr("visualizer.gui.main_window.StateManager.save", _capture_save)
+
+    window = MainWindow(data_dir=None, cards_dir=None)
+    window._activate_card(card_path)  # type: ignore[attr-defined]
+    window._handle_variable_selection("DATASET", "dataset_beta")  # type: ignore[attr-defined]
+    window._handle_variable_selection("CLASS", "class_C")  # type: ignore[attr-defined]
+    window._save_state()  # type: ignore[attr-defined]
+
+    persisted = captured["state"]
+    assert isinstance(persisted, dict)
+    assert persisted["card_file"] == str(card_path)
+    assert persisted["card_selection"] == {
+        "DATASET": "dataset_beta",
+        "CLASS": "class_C",
+    }
+    recent = persisted.get("recent_sessions")
+    assert isinstance(recent, list)
+    assert recent[0]["card_selection"] == {
+        "DATASET": "dataset_beta",
+        "CLASS": "class_C",
+    }

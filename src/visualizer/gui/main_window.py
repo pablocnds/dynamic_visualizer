@@ -32,6 +32,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self._data_dir = data_dir
         self._cards_dir = cards_dir
+        self._startup_explicit_data_source = data_dir is not None
+        self._startup_explicit_card_source = cards_dir is not None
         self._state_manager = StateManager()
         self._saved_state = self._state_manager.load()
         self._repository = DatasetRepository()
@@ -53,6 +55,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._added_files: set[Path] = set()
         self._pending_card_file: Optional[Path] = None
         self._pending_card_selection: Dict[str, str] | None = None
+        self._suppress_card_selection_changes = False
         self._last_variable_values: Dict[str, str] = {}
         self._view: MainWindowView | None = None
         self._visualization_override: VisualizationType | None = None
@@ -437,17 +440,24 @@ class MainWindow(QtWidgets.QMainWindow):
             normalized[variable] = value
         return normalized
 
+    def _snapshot_with_startup_precedence(self, snapshot: Dict[str, Any]) -> Dict[str, Any] | None:
+        merged = dict(snapshot)
+        if self._startup_explicit_data_source:
+            for key in ("data_dir", "data_file", "added_files"):
+                merged.pop(key, None)
+        if self._startup_explicit_card_source:
+            for key in ("card_dir", "card_file", "card_selection"):
+                merged.pop(key, None)
+        return merged or None
+
     def _load_initial_sources(self) -> None:
         self._load_cards()
         if self._data_dir:
             self._refresh_file_list()
         if self._pending_card_file and self._card_loader:
-            for index in range(self._card_list.count()):
-                item = self._card_list.item(index)
-                if item.data(QtCore.Qt.UserRole) == self._pending_card_file:
-                    self._card_list.setCurrentItem(item)
-                    self._handle_card_selection()
-                    break
+            pending_card = self._pending_card_file
+            if self._select_card_item(pending_card):
+                self._activate_card(pending_card)
         if not self._card_session and self._pending_data_file:
             if self._pending_data_file.exists():
                 self._add_file_to_list(self._pending_data_file)
@@ -465,7 +475,8 @@ class MainWindow(QtWidgets.QMainWindow):
         else:
             self._set_warning(None)
         self._update_sidebar_mode()
-        self._update_loaded_files()
+        if not self._card_session and self._current_path is None:
+            self._update_loaded_files()
         self._refresh_recent_sessions_menu()
 
     def _sync_initial_view_state(self) -> None:
@@ -697,14 +708,50 @@ class MainWindow(QtWidgets.QMainWindow):
         combo.blockSignals(False)
 
     def _load_cards(self) -> None:
-        self._card_list.clear()
-        self._card_loader = self._controller.card_loader
-        for card_path in self._controller.list_cards():
-            item = QtWidgets.QListWidgetItem(card_path.name)
-            item.setData(QtCore.Qt.UserRole, card_path)
-            self._card_list.addItem(item)
+        selected_path = self._active_card_path or self._pending_card_file
+        selected_row: int | None = None
+        self._suppress_card_selection_changes = True
+        self._card_list.blockSignals(True)
+        try:
+            self._card_list.clear()
+            self._card_loader = self._controller.card_loader
+            for index, card_path in enumerate(self._controller.list_cards()):
+                item = QtWidgets.QListWidgetItem(card_path.name)
+                item.setData(QtCore.Qt.UserRole, card_path)
+                self._card_list.addItem(item)
+                if selected_path is not None and card_path == selected_path:
+                    selected_row = index
+            if selected_row is not None:
+                self._card_list.setCurrentRow(selected_row)
+        finally:
+            self._card_list.blockSignals(False)
+            self._suppress_card_selection_changes = False
+
+    def _find_card_row(self, path: Path) -> int:
+        for index in range(self._card_list.count()):
+            item = self._card_list.item(index)
+            if item.data(QtCore.Qt.UserRole) == path:
+                return index
+        return -1
+
+    def _select_card_item(self, path: Path) -> bool:
+        row = self._find_card_row(path)
+        self._suppress_card_selection_changes = True
+        self._card_list.blockSignals(True)
+        try:
+            if row < 0:
+                self._card_list.clearSelection()
+                self._card_list.setCurrentRow(-1)
+                return False
+            self._card_list.setCurrentRow(row)
+            return True
+        finally:
+            self._card_list.blockSignals(False)
+            self._suppress_card_selection_changes = False
 
     def _handle_card_selection(self) -> None:
+        if self._suppress_card_selection_changes:
+            return
         selected_items = self._card_list.selectedItems()
         if not selected_items:
             self._controller.clear_card()
@@ -766,6 +813,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self._update_sidebar_mode()
         finally:
             self._pending_card_selection = None
+            self._pending_card_file = None
 
     def _handle_next_view(self) -> None:
         self._handle_pivot_step(1)
@@ -809,9 +857,13 @@ class MainWindow(QtWidgets.QMainWindow):
         super().keyPressEvent(event)
 
     def _clear_card_selection(self) -> None:
+        self._suppress_card_selection_changes = True
         self._card_list.blockSignals(True)
-        self._card_list.clearSelection()
-        self._card_list.blockSignals(False)
+        try:
+            self._card_list.clearSelection()
+        finally:
+            self._card_list.blockSignals(False)
+            self._suppress_card_selection_changes = False
         self._controller.clear_card()
         self._card_session = None
         self._update_navigation_buttons()
@@ -845,12 +897,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self._load_cards()
         if select_card:
             self._pending_card_file = select_card
-            for index in range(self._card_list.count()):
-                item = self._card_list.item(index)
-                if item.data(QtCore.Qt.UserRole) == select_card:
-                    self._card_list.setCurrentItem(item)
-                    self._handle_card_selection()
-                    break
+            if self._select_card_item(select_card):
+                self._activate_card(select_card)
         else:
             self._pending_card_file = None
             self._pending_card_selection = None
@@ -862,7 +910,9 @@ class MainWindow(QtWidgets.QMainWindow):
         )
         current_snapshot = self._normalize_session_entry(self._saved_state)
         if current_snapshot:
-            self._restore_snapshot_fields(current_snapshot)
+            startup_snapshot = self._snapshot_with_startup_precedence(current_snapshot)
+            if startup_snapshot:
+                self._restore_snapshot_fields(startup_snapshot)
             self._remember_recent_session(current_snapshot)
 
     def _save_state(self) -> None:
@@ -1156,12 +1206,11 @@ class MainWindow(QtWidgets.QMainWindow):
             self._variable_group.setVisible(False)
             return
         self._variable_group.setVisible(True)
-        pivot = session.definition.pivot_variable
         for variable in session.definition.variables:
             combo = QtWidgets.QComboBox()
             values = self._controller.available_values(
                 variable,
-                constrained=(variable == pivot),
+                constrained=True,
             )
             combo.addItems(values)
             combo.currentTextChanged.connect(
@@ -1198,11 +1247,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self._card_session = session
         if not session:
             return
-        pivot = session.definition.pivot_variable
         for variable, combo in self._variable_controls.items():
-            if variable == pivot:
-                values = self._controller.available_values(variable, constrained=True)
-                self._set_combo_items(combo, values)
+            values = self._controller.available_values(variable, constrained=True)
+            self._set_combo_items(combo, values)
             selection_value = session.selection.get(variable)
             self._set_combo_value(combo, selection_value)
 
@@ -1239,19 +1286,19 @@ class MainWindow(QtWidgets.QMainWindow):
         if not session:
             return
         try:
-            plans, missing, incompatible = self._controller.build_panel_plans()
+            result = self._controller.build_panel_plans()
         except Exception as exc:  # pragma: no cover - GUI feedback
             self._set_status_message(f"Card error: {exc}")
             self._show_error_dialog("Card error", str(exc))
             return
 
         self._card_session = session
-        if not plans:
+        if not result.plans:
             self._set_status_message("Card selection has no matching datasets.")
             self._update_loaded_files([])
             return
 
-        active_names = {plan.subcard.name for plan in plans}
+        active_names = {plan.subcard.name for plan in result.plans}
         for name in list(self._panel_overrides.keys()):
             if name not in active_names:
                 self._panel_overrides.pop(name, None)
@@ -1268,7 +1315,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 str,
             ]
         ] = []
-        for plan in plans:
+        for plan in result.plans:
             entries = [
                 (series.dataset, series.path, series.chart_style, series.label)
                 for series in plan.series
@@ -1281,7 +1328,7 @@ class MainWindow(QtWidgets.QMainWindow):
             )
             panels.append((plan.subcard, entries, plan.paths, panel_kind))
 
-        panel_names = [plan.subcard.name for plan in plans]
+        panel_names = [plan.subcard.name for plan in result.plans]
         kind_mismatch = any(
             panel_kind != self._panel_manager.panel_kind_by_name(subcard.name)
             for subcard, _entries, _paths, panel_kind in panels
@@ -1297,10 +1344,12 @@ class MainWindow(QtWidgets.QMainWindow):
             warning_bits.append(warning)
         if panel_warnings:
             warning_bits.extend(panel_warnings)
-        if missing:
-            warning_bits.append(f"missing: {', '.join(missing)}")
-        if incompatible:
-            warning_bits.append(f"incompatible: {', '.join(incompatible)}")
+        if result.missing:
+            warning_bits.append(f"missing: {', '.join(result.missing)}")
+        if result.load_errors:
+            warning_bits.append(f"errors: {', '.join(result.load_errors)}")
+        if result.incompatible:
+            warning_bits.append(f"incompatible: {', '.join(result.incompatible)}")
         if warning_bits:
             self._set_status_message("; ".join(warning_bits))
         else:

@@ -361,5 +361,25 @@ def test_table_style_rejects_invalid_reverse_type(tmp_path: Path) -> None:
     table_path.write_text(json.dumps(payload))
     repo = DatasetRepository()
 
-    with pytest.raises(ValueError, match="reverse'.*boolean|not of type 'boolean'"):
+    with pytest.raises(ValueError, match="reverse.*boolean|not of type 'boolean'"):
+        repo.load(table_path)
+
+
+def test_table_style_rejects_unknown_palette_name(tmp_path: Path) -> None:
+    table_path = tmp_path / "bad_palette_style.json"
+    payload = {
+        "dataset": "bad_palette_style",
+        "data": {
+            "column_names": ["a"],
+            "row_names": ["r1"],
+            "content": [[10]],
+            "table_style": {
+                "global": {"palette": "not_a_table_palette"},
+            },
+        },
+    }
+    table_path.write_text(json.dumps(payload))
+    repo = DatasetRepository()
+
+    with pytest.raises(ValueError, match="must be one of"):
         repo.load(table_path)

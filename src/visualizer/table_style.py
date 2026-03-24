@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Sequence
 
+from visualizer.palettes import TABLE_PALETTES, validate_palette_name
+
 
 @dataclass(frozen=True)
 class TableColorRule:
@@ -64,7 +66,15 @@ def parse_table_color_rule(raw: object | None, *, context: str) -> TableColorRul
     if unknown:
         raise ValueError(f"{context} contains unsupported keys: {', '.join(sorted(str(k) for k in unknown))}")
     palette_value = raw.get("palette")
-    palette = None if palette_value is None else str(palette_value)
+    palette = None
+    if palette_value is not None:
+        if not isinstance(palette_value, str):
+            raise ValueError(f"{context}.palette must be a string")
+        palette = validate_palette_name(
+            palette_value,
+            context=f"{context}.palette",
+            allowed=TABLE_PALETTES,
+        )
     range_value = raw.get("range")
     value_range = _parse_numeric_range(range_value, context=context)
     reverse = _parse_optional_bool(raw.get("reverse"), context=f"{context}.reverse")

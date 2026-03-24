@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Mapping
 
 from visualizer.interpretation.specs import VisualizationType
+from visualizer.palettes import CHART_PALETTES, validate_color_value, validate_palette_name
 
 
 _ALLOWED_ARGS_BY_VISUALIZATION: dict[VisualizationType, tuple[str, ...]] = {
@@ -45,6 +46,10 @@ def _validate_arg_types(style_name: str, params: Mapping[str, object], *, contex
     if alpha is not None and (isinstance(alpha, bool) or not isinstance(alpha, (int, float))):
         raise ValueError(f"{context} chart_style '{style_name}' arg 'alpha' must be numeric")
 
+    color = params.get("color")
+    if color is not None:
+        validate_color_value(color, context=f"{context} chart_style '{style_name}' arg 'color'")
+
     reverse = params.get("reverse")
     if reverse is not None and not isinstance(reverse, bool):
         raise ValueError(f"{context} chart_style '{style_name}' arg 'reverse' must be boolean")
@@ -59,12 +64,23 @@ def _validate_arg_types(style_name: str, params: Mapping[str, object], *, contex
             )
 
     palette = params.get("palette")
-    if palette is not None and not isinstance(palette, str):
-        raise ValueError(f"{context} chart_style '{style_name}' arg 'palette' must be a string")
+    if palette is not None:
+        if not isinstance(palette, str):
+            raise ValueError(f"{context} chart_style '{style_name}' arg 'palette' must be a string")
+        validate_palette_name(
+            palette,
+            context=f"{context} chart_style '{style_name}' arg 'palette'",
+            allowed=CHART_PALETTES,
+        )
 
     colors = params.get("colors")
     if colors is not None:
         if not isinstance(colors, (list, tuple)) or not colors:
             raise ValueError(
                 f"{context} chart_style '{style_name}' arg 'colors' must be a non-empty list"
+            )
+        for idx, value in enumerate(colors):
+            validate_color_value(
+                value,
+                context=f"{context} chart_style '{style_name}' arg 'colors[{idx}]'",
             )

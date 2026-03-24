@@ -24,7 +24,7 @@ filepath = "<CARD_DIR>/../data/study/{{CLASS}}/signal.json"
   - For table data, this is used as the compact table title.
 
 ## 3. Style Arguments
-Style args are validated when loading cards. Unknown keys raise an error.
+Style args are validated when loading cards. Unknown keys raise an error. Chart palettes must be one of `viridis`, `plasma`, `cividis`, `magma`, or `turbo`. Color values accept named colors, hex strings, or RGB/RGBA sequences.
 
 ```toml
 chart_style = { name = "line", color = "#1e4f9a", line_width = 2.0, alpha = 0.9 }
@@ -145,10 +145,12 @@ series_label = "Model Metrics"
 
 JSON can also provide `data.table_title`, grouped `data.column_headers`, and row/column-specific `data.table_style` (column rules still target flattened leaf columns).
 - For palette-driven styles, `reverse = true` flips the palette direction without changing the palette name.
+- Table palettes must be one of `blue`, `viridis`, `plasma`, `cividis`, or `magma`.
 
 ## 6. Behavior Notes
 - If `pivot_chart` is omitted, the first discovered variable (alphabetical) becomes pivot.
 - If default alphabetical selections do not form a valid combination, selection snaps to the nearest valid match.
+- Every GUI variable selector is constrained to values compatible with the current selection; non-pivot selectors do not offer impossible combinations.
 - In overlays, missing `chart_style` entries reuse the last style/global fallback.
 - Tables reject incompatible `chart_style`; range datasets require `ranges`.
 

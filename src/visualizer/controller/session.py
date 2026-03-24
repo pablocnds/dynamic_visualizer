@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 
 from visualizer.cards.loader import CardLoader
 from visualizer.cards.models import CardSession, ChartStyle, SeriesDefinition, SubcardDefinition
@@ -24,6 +24,14 @@ class PanelPlan:
     subcard: SubcardDefinition
     series: List[PanelSeries]
     paths: List[Path]
+
+
+@dataclass(frozen=True)
+class PanelBuildResult:
+    plans: List[PanelPlan] = field(default_factory=list)
+    missing: List[str] = field(default_factory=list)
+    load_errors: List[str] = field(default_factory=list)
+    incompatible: List[str] = field(default_factory=list)
 
 
 class SessionController:
@@ -90,15 +98,16 @@ class SessionController:
             return []
         return self.card_session.available_values(variable, constrained=constrained)
 
-    def build_panel_plans(self) -> Tuple[List[PanelPlan], List[str], List[str]]:
+    def build_panel_plans(self) -> PanelBuildResult:
         """Resolve the current card selection into datasets ready for rendering."""
 
         if not self.card_session:
-            return [], [], []
+            return PanelBuildResult()
 
         match_map = self.card_session.current_matches()
         plans: List[PanelPlan] = []
         missing: List[str] = []
+        load_errors: List[str] = []
         incompatible: List[str] = []
 
         for subcard in self.card_session.definition.subcards:
@@ -131,8 +140,10 @@ class SessionController:
                 dataset = None
                 try:
                     dataset = self._repository.load(series_def.path)
-                except Exception as exc:
+                except FileNotFoundError as exc:
                     missing.append(f"{series_def.path.name} ({exc})")
+                except Exception as exc:
+                    load_errors.append(f"{series_def.path.name} ({exc})")
                 if dataset is not None:
                     compatible, message = self._is_chart_style_compatible(
                         dataset, series_def.chart_style
@@ -151,7 +162,12 @@ class SessionController:
 
             plans.append(PanelPlan(subcard=subcard, series=series_payloads, paths=panel_paths))
 
-        return plans, missing, incompatible
+        return PanelBuildResult(
+            plans=plans,
+            missing=missing,
+            load_errors=load_errors,
+            incompatible=incompatible,
+        )
 
     def _is_chart_style_compatible(
         self, dataset: DataPayload, chart_style: ChartStyle | None

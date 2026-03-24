@@ -225,6 +225,40 @@ chart_style = { name = "colormap", reverse = "yes" }
         loader.load_definition(card_path)
 
 
+def test_chart_style_rejects_unknown_palette_name(tmp_path: Path) -> None:
+    cards_dir = tmp_path / "cards"
+    cards_dir.mkdir(parents=True, exist_ok=True)
+    card_path = cards_dir / "invalid_palette.toml"
+    card_path.write_text(
+        """
+filepath = "<CARD_DIR>/data.json"
+chart_style = { name = "colormap", palette = "definitely_not_a_palette" }
+"""
+    )
+
+    loader = CardLoader(cards_dir)
+
+    with pytest.raises(ValueError, match="must be one of"):
+        loader.load_definition(card_path)
+
+
+def test_chart_style_rejects_invalid_range_color_entries(tmp_path: Path) -> None:
+    cards_dir = tmp_path / "cards"
+    cards_dir.mkdir(parents=True, exist_ok=True)
+    card_path = cards_dir / "invalid_range_colors.toml"
+    card_path.write_text(
+        """
+filepath = "<CARD_DIR>/data.json"
+chart_style = { name = "ranges", colors = ["#00ff00", { bad = "value" }] }
+"""
+    )
+
+    loader = CardLoader(cards_dir)
+
+    with pytest.raises(ValueError, match="colors\\[1\\]"):
+        loader.load_definition(card_path)
+
+
 def test_chart_style_alias_accepts_supported_args(tmp_path: Path) -> None:
     cards_dir = tmp_path / "cards"
     cards_dir.mkdir(parents=True, exist_ok=True)
@@ -720,3 +754,57 @@ def test_update_selection_keeps_selected_variable_when_recovering() -> None:
     assert session.selection["DATASET"] == "standards60"
     selected_values = {key: session.selection.get(key) for key in definition.variables}
     assert selected_values in [match.variables for match in matches["default"]]
+
+
+def test_available_values_constrains_non_pivot_variables_against_current_selection() -> None:
+    definition = CardDefinition(
+        path=Path("dummy"),
+        subcards=(
+            SubcardDefinition(
+                name="default",
+                filepath_template="dummy",
+                variables=("COMPOUND", "DATASET", "SUBSET"),
+                filepaths=["dummy"],
+                overlay_variable=None,
+                chart_style=None,
+                chart_height=None,
+            ),
+        ),
+        variables=("COMPOUND", "DATASET", "SUBSET"),
+        chart_style=ChartStyle("line"),
+        pivot_variable="COMPOUND",
+    )
+    matches = {
+        "default": [
+            CardMatch(
+                path=Path("/tmp/r10_20.json"),
+                variables={
+                    "COMPOUND": "A",
+                    "DATASET": "R10_Standard_Mixes",
+                    "SUBSET": "iterative_excL_20eV",
+                },
+            ),
+            CardMatch(
+                path=Path("/tmp/r10_30.json"),
+                variables={
+                    "COMPOUND": "B",
+                    "DATASET": "R10_Standard_Mixes",
+                    "SUBSET": "iterative_excL_30eV",
+                },
+            ),
+            CardMatch(
+                path=Path("/tmp/std_10.json"),
+                variables={
+                    "COMPOUND": "C",
+                    "DATASET": "standards60",
+                    "SUBSET": "iterative_excL_10eV",
+                },
+            ),
+        ]
+    }
+
+    session = CardSession(definition=definition, matches=matches)
+    session.update_selection("DATASET", "standards60")
+
+    assert session.selection["DATASET"] == "standards60"
+    assert session.available_values("SUBSET", constrained=True) == ["iterative_excL_10eV"]

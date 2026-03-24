@@ -9,7 +9,7 @@ For a concise template-oriented guide, see `docs/cards_reference.md`.
 - Wildcard (`*`): plain glob segment only; it is not a variable and never exposed in the UI.
 - Pivot: `pivot_chart = "{{VAR}}"` identifies which variable cycles when moving prev/next. If omitted, the first discovered variable (alphabetical) is used.
 - Styles: `chart_style` accepts `line`, `scatter`, `stick`, `colormap` (1-D heatmap strip), `eventline` (1-D spike/event line), or `ranges` (1-D range bands). You can use the string shorthand (`"line"`) or an object with a `name` and style-specific parameters, e.g. `chart_style = { name = "line", width = 3 }`, `chart_style = { name = "stick", color = "#0f4c81", line_width = 1.25 }`, or `chart_style = { name = "ranges", palette = "cividis", alpha = 0.25 }`. Subcards and overlays may override it; missing overrides fall back to the card’s global style. One-dimensional plots can overlay with each other or with 2-D plots; in mixed overlays, 1-D data renders behind the 2-D plot with transparency. Stick plots draw vertical lines from `y=0` to each point's `y` value and preserve X spacing/order from the data. Eventline plots ignore Y values (when omitted they default to 1s). Aliases are accepted: `colormap_line`/`heatmap1d` → `colormap`, `events`/`spikes` → `eventline`, `range` → `ranges`. Table datasets render as tables when no `chart_style` is specified; if a `chart_style` is set, the dataset must be compatible (table data with a chart style is rejected).
-- Style args are validated at load time; unsupported/typo keys fail with a clear error instead of being silently ignored.
+- Style args are validated at load time; unsupported/typo keys fail with a clear error instead of being silently ignored. Palette names are validated too: chart styles support `viridis`, `plasma`, `cividis`, `magma`, and `turbo`; table styles support `blue`, `viridis`, `plasma`, `cividis`, and `magma`. Color values accept named colors, hex strings, or RGB/RGBA sequences.
 - Style args by chart type:
   - `line`: `color`, `alpha`, `line_width`/`width`
   - `scatter`: `color`, `alpha`, `marker_size`/`size`
@@ -115,6 +115,7 @@ When `chart_style` entries are missing/shorter than `filepath`, remaining series
 3. Default selections use alphabetical order; when that produces an impossible combination, the selection snaps to the closest discovered match. Cycling advances only the pivot variable.
 4. If `pivot_chart` is omitted, the card uses the first discovered user variable (excluding `overlay_variable`).
 5. Each subcard must resolve to existing files; overlays load every path listed in their array and, if `overlay_variable` is present, every discovered match of that pattern.
+6. In the GUI, every variable selector is constrained to values compatible with the current selection so impossible combinations are not offered for non-pivot variables either.
 
 ## Validation
 - Required fields: a top-level `filepath` **or** a `[subcards]` section.

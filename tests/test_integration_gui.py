@@ -39,16 +39,17 @@ def capture_qt_messages() -> Iterator[list[str]]:
 def _create_window() -> MainWindow:
     data_dir = Path("examples/data").resolve()
     cards_dir = Path("examples/cards").resolve()
-    window = MainWindow(data_dir=data_dir, cards_dir=cards_dir)
-    # Ensure state restore does not override paths
-    window._set_card_loader(cards_dir)  # type: ignore[attr-defined]
-    return window
+    return MainWindow(data_dir=data_dir, cards_dir=cards_dir)
 
 
 def _write_series(path: Path, x_values: list[float], y_values: list[float]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = {"dataset": path.stem, "data": {"x_axis": x_values, "y_axis": y_values}}
     path.write_text(json.dumps(payload))
+
+
+def _combo_items(combo: QtWidgets.QComboBox) -> list[str]:
+    return [combo.itemText(index) for index in range(combo.count())]
 
 
 def _create_missing_panel_window(tmp_path: Path) -> tuple[MainWindow, Path]:
@@ -251,6 +252,38 @@ def test_restore_state_uses_card_dir_when_card_file_is_missing(
     assert window._sidebar_mode == "card"  # type: ignore[attr-defined]
 
 
+def test_constructor_paths_take_precedence_over_saved_state(
+    app: QtWidgets.QApplication, tmp_path: Path, monkeypatch: pytest.MonkeyPatch  # noqa: ARG001
+) -> None:
+    explicit_data = tmp_path / "explicit_data"
+    saved_data = tmp_path / "saved_data"
+    explicit_cards = tmp_path / "explicit_cards"
+    saved_cards = tmp_path / "saved_cards"
+
+    _write_series(explicit_data / "explicit.json", [0.0], [1.0])
+    _write_series(saved_data / "saved.json", [0.0], [2.0])
+    explicit_cards.mkdir(parents=True)
+    saved_cards.mkdir(parents=True)
+    (explicit_cards / "explicit.toml").write_text('filepath = "<CARD_DIR>/../explicit_data/*.json"\n')
+    (saved_cards / "saved.toml").write_text('filepath = "<CARD_DIR>/../saved_data/*.json"\n')
+
+    saved_state = {
+        "data_dir": str(saved_data),
+        "card_dir": str(saved_cards),
+    }
+    monkeypatch.setattr("visualizer.gui.main_window.StateManager.load", lambda _self: saved_state)
+    monkeypatch.setattr("visualizer.gui.main_window.StateManager.save", lambda _self, _state: None)
+
+    window = MainWindow(data_dir=explicit_data.resolve(), cards_dir=explicit_cards.resolve())
+
+    assert window._data_dir == explicit_data.resolve()  # type: ignore[attr-defined]
+    assert window._cards_dir == explicit_cards.resolve()  # type: ignore[attr-defined]
+    assert window._file_list.count() == 1  # type: ignore[attr-defined]
+    assert window._card_list.count() == 1  # type: ignore[attr-defined]
+    assert window._file_list.item(0).text() == "explicit.json"  # type: ignore[attr-defined]
+    assert window._card_list.item(0).text() == "explicit.toml"  # type: ignore[attr-defined]
+
+
 def test_recent_sessions_prune_invalid_or_empty_paths(
     app: QtWidgets.QApplication, tmp_path: Path, monkeypatch: pytest.MonkeyPatch  # noqa: ARG001
 ) -> None:
@@ -372,6 +405,68 @@ def test_restore_state_restores_active_card_selection(
         "DATASET": "dataset_beta",
         "CLASS": "class_C",
     }
+
+
+def test_restore_state_keeps_loaded_files_for_active_card(
+    app: QtWidgets.QApplication, monkeypatch: pytest.MonkeyPatch  # noqa: ARG001
+) -> None:
+    card_path = Path("examples/cards/1-simple_card.toml").resolve()
+    saved_state = {
+        "card_file": str(card_path),
+    }
+
+    monkeypatch.setattr("visualizer.gui.main_window.StateManager.load", lambda _self: saved_state)
+    monkeypatch.setattr("visualizer.gui.main_window.StateManager.save", lambda _self, _state: None)
+
+    window = MainWindow(data_dir=None, cards_dir=None)
+
+    loaded_files = window._loaded_files_list  # type: ignore[attr-defined]
+    assert loaded_files.count() > 0
+    assert all(loaded_files.item(index).text() != "No data loaded" for index in range(loaded_files.count()))
+
+
+def test_variable_controls_constrain_all_variables(
+    app: QtWidgets.QApplication, tmp_path: Path, monkeypatch: pytest.MonkeyPatch  # noqa: ARG001
+) -> None:
+    monkeypatch.setattr("visualizer.gui.main_window.StateManager.load", lambda _self: {})
+    monkeypatch.setattr("visualizer.gui.main_window.StateManager.save", lambda _self, _state: None)
+
+    data_dir = tmp_path / "data"
+    cards_dir = tmp_path / "cards"
+    cards_dir.mkdir(parents=True, exist_ok=True)
+    _write_series(
+        data_dir / "R10_Standard_Mixes" / "iterative_excL_20eV" / "compound_a" / "signal.json",
+        [0.0],
+        [1.0],
+    )
+    _write_series(
+        data_dir / "R10_Standard_Mixes" / "iterative_excL_30eV" / "compound_b" / "signal.json",
+        [0.0],
+        [2.0],
+    )
+    _write_series(
+        data_dir / "standards60" / "iterative_excL_10eV" / "compound_c" / "signal.json",
+        [0.0],
+        [3.0],
+    )
+    card_path = cards_dir / "subset_card.toml"
+    card_path.write_text(
+        """
+[global]
+pivot_chart = "{{COMPOUND}}"
+
+filepath = "<CARD_DIR>/../data/{{DATASET}}/{{SUBSET}}/{{COMPOUND}}/signal.json"
+"""
+    )
+
+    window = MainWindow(data_dir=data_dir.resolve(), cards_dir=cards_dir.resolve())
+    window._activate_card(card_path)  # type: ignore[attr-defined]
+    window._handle_variable_selection("DATASET", "standards60")  # type: ignore[attr-defined]
+
+    subset_combo = window._variable_controls["SUBSET"]  # type: ignore[attr-defined]
+    compound_combo = window._variable_controls["COMPOUND"]  # type: ignore[attr-defined]
+    assert _combo_items(subset_combo) == ["iterative_excL_10eV"]
+    assert _combo_items(compound_combo) == ["compound_c"]
 
 
 def test_save_state_persists_active_card_selection(

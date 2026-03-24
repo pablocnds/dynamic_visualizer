@@ -12,6 +12,8 @@ Guidelines for working on this repository across sessions.
 - Maintain good test coverage and keep tests meaningful (avoid superficial or redundant tests).
 - Prefer adding tests when behavior changes or new features are added.
 - Use `PYTHONPATH=src pytest ...` when running tests locally.
+- After completing code changes, rebuild the package and reinstall it into the repository-local virtualenv (`.venv`) so the environment matches the current source.
+- After verification, create a git commit for the completed change set so repository history stays current. Avoid committing generated-only version churn unless explicitly requested.
 
 ## Architecture and Design
 - Preserve a clean, abstract architecture (data loading, interpretation, rendering, GUI).

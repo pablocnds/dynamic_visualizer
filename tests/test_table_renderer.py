@@ -175,6 +175,34 @@ def test_grouped_table_view_uses_taller_header(app: QtWidgets.QApplication) -> N
     assert len(grouped_view.grouped_header().column_groups()) == 3
 
 
+def test_grouped_table_view_paints_without_header_errors(app: QtWidgets.QApplication) -> None:  # noqa: ARG001
+    renderer = TableRenderer()
+    view = TableView()
+    spec = TableSpec(
+        dataset_id="grouped-table",
+        label="Grouped Model Comparison",
+        column_names=["precision", "AUC", "winner", "precision", "recall"],
+        row_names=["r1"],
+        content=[[0.91, 0.95, "Model 1", 0.89, 0.87]],
+        column_groups=[
+            TableColumnGroup(label="Model 1", subcolumns=["precision", "AUC"]),
+            TableColumnGroup(label="winner"),
+            TableColumnGroup(label="Model 2", subcolumns=["precision", "recall"]),
+        ],
+    )
+
+    renderer.render(view, spec)
+    view.resize(800, 240)
+    view.show()
+    app.processEvents()
+
+    pixmap = view.grab()
+
+    assert not pixmap.isNull()
+    assert pixmap.size().width() > 0
+    assert pixmap.size().height() > 0
+
+
 def test_table_view_hides_title_when_label_missing(app: QtWidgets.QApplication) -> None:  # noqa: ARG001
     renderer = TableRenderer()
     view = TableView()

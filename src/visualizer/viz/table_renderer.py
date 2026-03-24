@@ -264,53 +264,57 @@ class GroupedTableHeaderView(QtWidgets.QHeaderView):
             super().paintEvent(event)
             return
         painter = QtWidgets.QStylePainter(self.viewport())
-        top_height = self._row_height()
-        bottom_height = max(0, self.height() - top_height)
-        visible_rect = event.rect()
-        logical_index = 0
-        for group in self._column_groups:
-            span = len(group.subcolumns) if group.subcolumns else 1
-            group_left = self.sectionViewportPosition(logical_index)
-            group_width = sum(self.sectionSize(logical_index + offset) for offset in range(span))
-            group_right = group_left + group_width
-            if group_right < visible_rect.left():
-                logical_index += span
-                continue
-            if group_left > visible_rect.right():
-                break
+        try:
+            top_height = self._row_height()
+            bottom_height = max(0, self.height() - top_height)
+            visible_rect = event.rect()
+            logical_index = 0
+            for group in self._column_groups:
+                span = len(group.subcolumns) if group.subcolumns else 1
+                group_left = self.sectionViewportPosition(logical_index)
+                group_width = sum(self.sectionSize(logical_index + offset) for offset in range(span))
+                group_right = group_left + group_width
+                if group_right < visible_rect.left():
+                    logical_index += span
+                    continue
+                if group_left > visible_rect.right():
+                    break
 
-            if group.subcolumns:
-                self._paint_header_cell(
-                    painter,
-                    QtCore.QRect(group_left, 0, group_width, top_height),
-                    str(group.label),
-                    logical_index,
-                    QtWidgets.QStyleOptionHeader.OnlyOneSection,
-                )
-                for offset, subcolumn in enumerate(group.subcolumns):
-                    section = logical_index + offset
-                    rect = QtCore.QRect(
-                        self.sectionViewportPosition(section),
-                        top_height,
-                        self.sectionSize(section),
-                        bottom_height,
-                    )
+                if group.subcolumns:
                     self._paint_header_cell(
                         painter,
-                        rect,
-                        str(subcolumn),
-                        section,
-                        self._section_position(offset, span),
+                        QtCore.QRect(group_left, 0, group_width, top_height),
+                        str(group.label),
+                        logical_index,
+                        QtWidgets.QStyleOptionHeader.OnlyOneSection,
                     )
-            else:
-                self._paint_header_cell(
-                    painter,
-                    QtCore.QRect(group_left, 0, group_width, self.height()),
-                    str(group.label),
-                    logical_index,
-                    QtWidgets.QStyleOptionHeader.OnlyOneSection,
-                )
-            logical_index += span
+                    for offset, subcolumn in enumerate(group.subcolumns):
+                        section = logical_index + offset
+                        rect = QtCore.QRect(
+                            self.sectionViewportPosition(section),
+                            top_height,
+                            self.sectionSize(section),
+                            bottom_height,
+                        )
+                        self._paint_header_cell(
+                            painter,
+                            rect,
+                            str(subcolumn),
+                            section,
+                            self._section_position(offset, span),
+                        )
+                else:
+                    self._paint_header_cell(
+                        painter,
+                        QtCore.QRect(group_left, 0, group_width, self.height()),
+                        str(group.label),
+                        logical_index,
+                        QtWidgets.QStyleOptionHeader.OnlyOneSection,
+                    )
+                logical_index += span
+        finally:
+            if painter.isActive():
+                painter.end()
 
     def _paint_header_cell(
         self,
@@ -325,7 +329,7 @@ class GroupedTableHeaderView(QtWidgets.QHeaderView):
         option.rect = rect
         option.section = section
         option.text = self.fontMetrics().elidedText(text, QtCore.Qt.ElideRight, max(0, rect.width() - 8))
-        option.textAlignment = int(self.defaultAlignment())
+        option.textAlignment = self.defaultAlignment()
         option.position = position
         option.sortIndicator = QtWidgets.QStyleOptionHeader.SortIndicator.None_
         option.state &= ~QtWidgets.QStyle.State_On

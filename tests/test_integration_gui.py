@@ -7,6 +7,7 @@ import pytest
 
 QtWidgets = pytest.importorskip("PySide6.QtWidgets", reason="PySide6 not installed; install requirements to run GUI tests")
 QtCore = pytest.importorskip("PySide6.QtCore", reason="PySide6 not installed; install requirements to run GUI tests")
+QtGui = pytest.importorskip("PySide6.QtGui", reason="PySide6 not installed; install requirements to run GUI tests")
 pg = pytest.importorskip("pyqtgraph", reason="pyqtgraph not installed; install requirements to run GUI tests")
 
 from visualizer.gui.main_window import MainWindow
@@ -204,6 +205,56 @@ def test_synchronized_axes_respect_axis_visibility(
     assert bottom_axis.labelText == ""
 
 
+def test_sync_links_are_removed_when_switching_to_non_sync_card(
+    qt_app: QtWidgets.QApplication, tmp_path: Path, monkeypatch: pytest.MonkeyPatch  # noqa: ARG001
+) -> None:
+    monkeypatch.setattr("visualizer.gui.main_window.StateManager.load", lambda _self: {})
+    monkeypatch.setattr("visualizer.gui.main_window.StateManager.save", lambda _self, _state: None)
+
+    data_dir = tmp_path / "data"
+    cards_dir = tmp_path / "cards"
+    cards_dir.mkdir(parents=True, exist_ok=True)
+    _write_series(data_dir / "top.json", [0.0, 1.0, 2.0], [1.0, 2.0, 3.0])
+    _write_series(data_dir / "bottom.json", [0.0, 1.0, 2.0], [3.0, 2.0, 1.0])
+
+    sync_card = cards_dir / "sync.toml"
+    sync_card.write_text(
+        """
+[global]
+synchronize_axis = true
+
+[subcards.top]
+filepath = "<CARD_DIR>/../data/top.json"
+
+[subcards.bottom]
+filepath = "<CARD_DIR>/../data/bottom.json"
+"""
+    )
+    plain_card = cards_dir / "plain.toml"
+    plain_card.write_text(
+        """
+[subcards.top]
+filepath = "<CARD_DIR>/../data/top.json"
+
+[subcards.bottom]
+filepath = "<CARD_DIR>/../data/bottom.json"
+"""
+    )
+
+    window = MainWindow(data_dir=data_dir.resolve(), cards_dir=cards_dir.resolve())
+    window._activate_card(sync_card)  # type: ignore[attr-defined]
+    synced_plots = window._panel_plots  # type: ignore[attr-defined]
+    assert len(synced_plots) == 2
+    synced_view_box = synced_plots[1].getPlotItem().getViewBox()
+    assert synced_view_box.state["linkedViews"][0] is not None
+
+    window._activate_card(plain_card)  # type: ignore[attr-defined]
+    unsynced_plots = window._panel_plots  # type: ignore[attr-defined]
+    assert len(unsynced_plots) == 2
+    unsynced_view_box = unsynced_plots[1].getPlotItem().getViewBox()
+    assert unsynced_view_box.state["linkedViews"][0] is None
+
+
 def test_missing_panels_clear_previous_items(
     qt_app: QtWidgets.QApplication, tmp_path: Path  # noqa: ARG001
 ) -> None:
@@ -318,6 +369,27 @@ def test_recent_sessions_prune_invalid_or_empty_paths(
     action_texts = [action.text() for action in window._recent_sessions_menu.actions()]  # type: ignore[attr-defined]
     assert any(text.startswith("Cards: ") for text in action_texts)
     assert any(text.startswith("Data: ") for text in action_texts)
+
+
+def test_recent_sessions_ignore_card_dirs_with_only_scratch_cards(
+    qt_app: QtWidgets.QApplication, tmp_path: Path, monkeypatch: pytest.MonkeyPatch  # noqa: ARG001
+) -> None:
+    cards_dir = tmp_path / "cards"
+    cards_dir.mkdir(parents=True)
+    (cards_dir / "__draft.toml").write_text('filepath = "<CARD_DIR>/../data/*.json"\n')
+
+    saved_state = {
+        "recent_sessions": [
+            {"card_dir": str(cards_dir)},
+        ]
+    }
+    monkeypatch.setattr("visualizer.gui.main_window.StateManager.load", lambda _self: saved_state)
+    monkeypatch.setattr("visualizer.gui.main_window.StateManager.save", lambda _self, _state: None)
+
+    window = MainWindow(data_dir=None, cards_dir=None)
+
+    assert window._recent_sessions == []  # type: ignore[attr-defined]
+    assert [action.text() for action in window._recent_sessions_menu.actions()] == ["No previous sessions"]  # type: ignore[attr-defined]
 
 
 def test_open_previous_session_restores_selected_snapshot(
@@ -466,6 +538,33 @@ filepath = "<CARD_DIR>/../data/{{DATASET}}/{{SUBSET}}/{{COMPOUND}}/signal.json"
     compound_combo = window._variable_controls["COMPOUND"]  # type: ignore[attr-defined]
     assert _combo_items(subset_combo) == ["iterative_excL_10eV"]
     assert _combo_items(compound_combo) == ["compound_c"]
+
+
+def test_global_navigation_shortcuts_do_not_override_combo_navigation(
+    qt_app: QtWidgets.QApplication, monkeypatch: pytest.MonkeyPatch  # noqa: ARG001
+) -> None:
+    monkeypatch.setattr("visualizer.gui.main_window.StateManager.load", lambda _self: {})
+    monkeypatch.setattr("visualizer.gui.main_window.StateManager.save", lambda _self, _state: None)
+
+    card_path = Path("examples/cards/2-multivariable_card.toml").resolve()
+    window = MainWindow(data_dir=None, cards_dir=None)
+    window._activate_card(card_path)  # type: ignore[attr-defined]
+
+    dataset_combo = window._variable_controls["DATASET"]  # type: ignore[attr-defined]
+    event = QtGui.QKeyEvent(
+        QtCore.QEvent.ShortcutOverride,
+        QtCore.Qt.Key_Down,
+        QtCore.Qt.NoModifier,
+    )
+
+    monkeypatch.setattr(
+        "visualizer.gui.main_window.QtWidgets.QApplication.focusWidget",
+        lambda: dataset_combo,
+    )
+
+    assert window._should_disable_global_navigation_shortcuts(dataset_combo) is True  # type: ignore[attr-defined]
+    assert window.eventFilter(window, event) is False
+    assert event.isAccepted() is True
 
 
 def test_save_state_persists_active_card_selection(

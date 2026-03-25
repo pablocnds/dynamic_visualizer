@@ -52,7 +52,7 @@ class CardLoader:
             context=f"{path} table_style",
         )
         pivot = _resolve_card_option(data, global_section, "pivot_chart")
-        synchronize_axis = bool(global_section.get("synchronize_axis", False))
+        synchronize_axis = bool(_parse_optional_bool(global_section.get("synchronize_axis")))
         show_x_axis = _parse_optional_bool(_resolve_card_option(data, global_section, "show_x_axis"))
         show_y_axis = _parse_optional_bool(_resolve_card_option(data, global_section, "show_y_axis"))
         subcards_section = data.get("subcards") or {}

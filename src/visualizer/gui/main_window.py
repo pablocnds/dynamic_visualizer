@@ -146,11 +146,14 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _install_navigation_shortcuts(self) -> None:
         self._up_shortcut = QtGui.QShortcut(QtGui.QKeySequence(QtCore.Qt.Key_Up), self)
-        self._up_shortcut.setContext(QtCore.Qt.ApplicationShortcut)
+        self._up_shortcut.setContext(QtCore.Qt.WindowShortcut)
         self._up_shortcut.activated.connect(lambda: self._handle_list_navigation_shortcut(-1))
         self._down_shortcut = QtGui.QShortcut(QtGui.QKeySequence(QtCore.Qt.Key_Down), self)
-        self._down_shortcut.setContext(QtCore.Qt.ApplicationShortcut)
+        self._down_shortcut.setContext(QtCore.Qt.WindowShortcut)
         self._down_shortcut.activated.connect(lambda: self._handle_list_navigation_shortcut(1))
+        app = QtWidgets.QApplication.instance()
+        if app is not None:
+            app.installEventFilter(self)
 
     def _load_sidebar_icons(self) -> None:
         self._sidebar_icon_collapse = self._load_icon_from_package("sidebar-collapse.png")
@@ -402,7 +405,11 @@ class MainWindow(QtWidgets.QMainWindow):
         card_dir = entry.get("card_dir")
         if isinstance(card_dir, str):
             path = Path(card_dir).expanduser().resolve()
-            if path.is_dir() and any(path.glob("*.toml")):
+            if path.is_dir() and any(
+                candidate
+                for candidate in path.glob("*.toml")
+                if not candidate.name.startswith("__")
+            ):
                 normalized["card_dir"] = str(path)
 
         added_files = entry.get("added_files", [])
@@ -517,6 +524,26 @@ class MainWindow(QtWidgets.QMainWindow):
             self._handle_card_list_step(step)
         else:
             self._handle_file_list_step(step)
+
+    def _should_disable_global_navigation_shortcuts(
+        self, focus_widget: QtWidgets.QWidget | None
+    ) -> bool:
+        current = focus_widget
+        while current is not None:
+            if isinstance(
+                current,
+                (
+                    QtWidgets.QComboBox,
+                    QtWidgets.QAbstractSpinBox,
+                    QtWidgets.QLineEdit,
+                    QtWidgets.QTextEdit,
+                    QtWidgets.QPlainTextEdit,
+                    QtWidgets.QAbstractItemView,
+                ),
+            ):
+                return True
+            current = current.parentWidget()
+        return False
 
     def _update_sidebar_mode(self) -> None:
         if not self._list_stack or not self._mode_label:
@@ -1221,8 +1248,24 @@ class MainWindow(QtWidgets.QMainWindow):
         self._sync_variable_controls()
 
     def closeEvent(self, event: QtGui.QCloseEvent) -> None:  # type: ignore[override]
+        app = QtWidgets.QApplication.instance()
+        if app is not None:
+            app.removeEventFilter(self)
         self._save_state()
         super().closeEvent(event)
+
+    def eventFilter(self, watched: QtCore.QObject, event: QtCore.QEvent) -> bool:  # type: ignore[override]
+        if event.type() == QtCore.QEvent.ShortcutOverride and isinstance(event, QtGui.QKeyEvent):
+            focus_widget = QtWidgets.QApplication.focusWidget()
+            if (
+                focus_widget is not None
+                and focus_widget.window() is self
+                and event.key() in (QtCore.Qt.Key_Up, QtCore.Qt.Key_Down)
+                and self._should_disable_global_navigation_shortcuts(focus_widget)
+            ):
+                event.accept()
+                return False
+        return super().eventFilter(watched, event)
 
     @property
     def _panel_plots(self) -> List[pg.PlotWidget]:  # pragma: no cover - test/helper access
@@ -1337,8 +1380,7 @@ class MainWindow(QtWidgets.QMainWindow):
             warning = self._build_panel_layout(panels)
         else:
             warning = self._update_existing_panels(panels)
-        if session.definition.synchronize_axis:
-            self._panel_manager.synchronize_x_axes()
+        self._panel_manager.apply_x_axis_synchronization(session.definition.synchronize_axis)
         warning_bits = []
         if warning:
             warning_bits.append(warning)

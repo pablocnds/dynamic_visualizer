@@ -15,6 +15,7 @@ _BACKGROUND_ALPHA = 90
 _DEFAULT_SERIES_COLOR = (50, 110, 240)
 _DEFAULT_SCATTER_ALPHA = 180
 _DEFAULT_STICK_ALPHA = 220
+_DEFAULT_AXIS_TICK_LENGTH = -5
 
 
 class _TopAxisOverlay:
@@ -136,16 +137,7 @@ class PlotRenderer:
         show_x_axis: bool | None = None,
         show_y_axis: bool | None = None,
     ) -> None:
-        self._interaction_manager.clear_widget(widget)
-        self._clear_viewbox_handlers(widget)
-        self._clear_legend(widget)
-        self._clear_colorbar(widget)
-        self._clear_axis_overlay(widget)
-        widget.clear()
-        plot_item = widget.getPlotItem()
-        plot_item.showAxis("left")
-        plot_item.getAxis("left").setStyle(showValues=True)
-        plot_item.showAxis("bottom")
+        plot_item = self._prepare_widget_for_render(widget)
 
         if spec.visualization == VisualizationType.EVENTLINE:
             self._render_eventline(widget, spec, show_axis=show_x_axis)
@@ -156,7 +148,7 @@ class PlotRenderer:
         elif spec.visualization == VisualizationType.COLORMAP:
             self._render_colormap(widget, spec, show_axis=show_x_axis)
             return
-        self._render_two_dimensional_series(
+        categorical_ticks = self._render_two_dimensional_series(
             widget,
             spec,
             color=pg.mkColor(_DEFAULT_SERIES_COLOR),
@@ -171,6 +163,7 @@ class PlotRenderer:
             spec.x_label or "X Axis",
             spec.y_label or "Y Axis",
         )
+        self._apply_categorical_ticks(plot_item, categorical_ticks)
         # Single-spec legend is optional; only add when multiple
 
     def render_multiple(
@@ -181,13 +174,9 @@ class PlotRenderer:
         show_y_axis: bool | None = None,
     ) -> None:
         specs = list(specs)
-        self._interaction_manager.clear_widget(widget)
-        self._clear_viewbox_handlers(widget)
+        plot_item = self._prepare_widget_for_render(widget)
         if not specs:
-            widget.clear()
             return
-        self._clear_colorbar(widget)
-        self._clear_axis_overlay(widget)
         one_dim_specs = [spec for spec in specs if self._is_one_dimensional(spec)]
         two_dim_specs = [spec for spec in specs if not self._is_one_dimensional(spec)]
         if len(specs) > 1 and one_dim_specs and not two_dim_specs:
@@ -203,30 +192,32 @@ class PlotRenderer:
                 show_y_axis=show_y_axis,
             )
             return
-        self._clear_legend(widget)
-        widget.clear()
         legend = widget.addLegend()
-        legend.setParentItem(widget.getPlotItem())
+        legend.setParentItem(plot_item)
         legend.setBrush(pg.mkBrush(255, 255, 255, 220))
         legend.setPen(pg.mkPen(color=(30, 30, 30), width=1))
         # top-right anchor with padding
         legend.anchor(itemPos=(1, 0), parentPos=(1, 0), offset=(-10, 10))
         widget.legend = legend  # type: ignore[attr-defined]
+        categorical_ticks: list[tuple[float, str]] | None = None
         for index, spec in enumerate(specs):
             color = pg.intColor(index, hues=len(specs) * 2)
             label = getattr(spec, "label", None) or spec.dataset_id
-            self._render_two_dimensional_series(widget, spec, color=color, name=label)
+            spec_ticks = self._render_two_dimensional_series(widget, spec, color=color, name=label)
+            if categorical_ticks is None and spec_ticks:
+                categorical_ticks = spec_ticks
         first = specs[0]
         widget.setLabel("bottom", first.x_label or "X Axis")
         widget.setLabel("left", first.y_label or "Y Axis")
         widget.showGrid(x=True, y=True, alpha=0.2)
         self._apply_axis_visibility(
-            widget.getPlotItem(),
+            plot_item,
             show_x_axis,
             show_y_axis,
             first.x_label or "X Axis",
             first.y_label or "Y Axis",
         )
+        self._apply_categorical_ticks(plot_item, categorical_ticks)
 
     def _clear_legend(self, widget: pg.PlotWidget) -> None:
         legend = getattr(widget, "legend", None)
@@ -236,16 +227,74 @@ class PlotRenderer:
             widget.legend = None  # type: ignore[attr-defined]
 
     def reset_widget(self, widget: pg.PlotWidget) -> None:
+        self._prepare_widget_for_render(widget)
+        try:
+            widget.enableAutoRange(x=True, y=True)
+        except Exception:
+            pass
+
+    def _prepare_widget_for_render(self, widget: pg.PlotWidget) -> pg.PlotItem:
         self._interaction_manager.clear_widget(widget)
         self._clear_legend(widget)
         self._clear_colorbar(widget)
         self._clear_viewbox_handlers(widget)
         self._clear_axis_overlay(widget)
         widget.clear()
+        plot_item = widget.getPlotItem()
+        self._restore_plot_item_state(plot_item)
         try:
             widget.enableAutoRange(x=True, y=True)
         except Exception:
             pass
+        return plot_item
+
+    def _restore_plot_item_state(self, plot_item: pg.PlotItem) -> None:
+        self._restore_axis_state(plot_item, "left")
+        self._restore_axis_state(plot_item, "bottom")
+        plot_item.setLabel("bottom", None)
+        plot_item.setLabel("left", None)
+        plot_item.showGrid(x=False, y=False, alpha=0.0)
+        self._restore_view_box_state(plot_item.getViewBox())
+
+    def _restore_view_box_state(self, view_box: pg.ViewBox) -> None:
+        try:
+            view_box.setMouseEnabled(x=True, y=True)
+        except Exception:
+            pass
+        try:
+            view_box.setLimits(
+                xMin=None,
+                xMax=None,
+                yMin=None,
+                yMax=None,
+                minXRange=None,
+                maxXRange=None,
+                minYRange=None,
+                maxYRange=None,
+            )
+        except Exception:
+            pass
+
+    def _restore_axis_state(self, plot_item: pg.PlotItem, axis_name: str) -> None:
+        plot_item.showAxis(axis_name, show=True)
+        axis = plot_item.getAxis(axis_name)
+        default_pen = self._default_axis_pen()
+        try:
+            axis.show()
+            axis.setStyle(showValues=True, tickLength=_DEFAULT_AXIS_TICK_LENGTH)
+            axis.setPen(default_pen)
+            axis.setTextPen(default_pen)
+            axis.setTicks(None)
+            if axis_name == "bottom":
+                axis.setHeight(None)
+            elif axis_name == "left":
+                axis.setWidth(None)
+        except Exception:
+            pass
+
+    @staticmethod
+    def _default_axis_pen():
+        return pg.mkPen(pg.getConfigOption("foreground"))
 
     def apply_axis_visibility(
         self, widget: pg.PlotWidget, show_x_axis: bool | None, show_y_axis: bool | None
@@ -257,10 +306,6 @@ class PlotRenderer:
         self._clear_colorbar(widget)
 
     def _render_colormap(self, widget: pg.PlotWidget, spec: PlotSpec, show_axis: bool | None) -> None:
-        widget.clear()
-        self._clear_legend(widget)
-        self._clear_colorbar(widget)
-        self._clear_axis_overlay(widget)
         plot_item = widget.getPlotItem()
         self._style_1d_plot(plot_item)
         values = self._coerce_array(spec.y)
@@ -299,10 +344,6 @@ class PlotRenderer:
             self._ensure_top_axis_overlay(widget, axis_colors)
 
     def _render_eventline(self, widget: pg.PlotWidget, spec: PlotSpec, show_axis: bool | None) -> None:
-        widget.clear()
-        self._clear_legend(widget)
-        self._clear_colorbar(widget)
-        self._clear_axis_overlay(widget)
         plot_item = widget.getPlotItem()
         self._style_1d_plot(plot_item)
 
@@ -344,10 +385,6 @@ class PlotRenderer:
             self._ensure_top_axis_overlay(widget, axis_colors)
 
     def _render_range(self, widget: pg.PlotWidget, spec: PlotSpec, show_axis: bool | None) -> None:
-        widget.clear()
-        self._clear_legend(widget)
-        self._clear_colorbar(widget)
-        self._clear_axis_overlay(widget)
         plot_item = widget.getPlotItem()
         self._style_1d_plot(plot_item)
 
@@ -473,19 +510,20 @@ class PlotRenderer:
         spec: PlotSpec,
         color: pg.QtGui.QColor,
         name: str | None = None,
-    ) -> None:
+    ) -> list[tuple[float, str]] | None:
+        x_values, categorical_ticks = self._coerce_plot_x(spec.x)
         if spec.visualization == VisualizationType.LINE:
             pen_color = self._resolve_series_color(spec.style_params, color, fallback_alpha=255)
             line_width = self._resolve_line_width(spec.style_params, fallback=2.0)
             kwargs = {"name": name} if name else {}
             widget.plot(
-                spec.x,
+                x_values,
                 spec.y,
                 pen=pg.mkPen(color=pen_color, width=line_width),
                 symbol=None,
                 **kwargs,
             )
-            return
+            return categorical_ticks
         if spec.visualization == VisualizationType.SCATTER:
             brush_color = self._resolve_series_color(
                 spec.style_params,
@@ -495,7 +533,7 @@ class PlotRenderer:
             marker_size = self._resolve_marker_size(spec.style_params, fallback=6.0)
             kwargs = {"name": name} if name else {}
             widget.plot(
-                spec.x,
+                x_values,
                 spec.y,
                 pen=None,
                 symbol="o",
@@ -503,20 +541,21 @@ class PlotRenderer:
                 symbolSize=marker_size,
                 **kwargs,
             )
-            return
+            return categorical_ticks
         if spec.visualization == VisualizationType.STICK:
-            self._render_stick_series(widget, spec, color=color, name=name)
-            return
+            self._render_stick_series(widget, spec, x_values=x_values, color=color, name=name)
+            return categorical_ticks
         raise ValueError(f"Unsupported two-dimensional visualization type: {spec.visualization.value}")
 
     def _render_stick_series(
         self,
         widget: pg.PlotWidget,
         spec: PlotSpec,
+        x_values: Sequence[float | str | bool],
         color: pg.QtGui.QColor,
         name: str | None = None,
     ) -> None:
-        x_numeric = self._coerce_array(spec.x, fallback_range=True)
+        x_numeric = np.asarray(x_values, dtype=float)
         y_numeric = self._coerce_array(spec.y)
         if x_numeric.size == 0 or y_numeric.size == 0:
             return
@@ -704,6 +743,28 @@ class PlotRenderer:
             pass
         plot_item.setRange(yRange=(0, 1), padding=0)
 
+    def _coerce_plot_x(
+        self, values: Sequence[float | str | bool]
+    ) -> tuple[Sequence[float | str | bool], list[tuple[float, str]] | None]:
+        if not values or not self._has_categorical_x(values):
+            return values, None
+        categorical_ticks = [
+            (float(index), str(value))
+            for index, value in enumerate(values)
+        ]
+        return [tick[0] for tick in categorical_ticks], categorical_ticks
+
+    @staticmethod
+    def _has_categorical_x(values: Sequence[float | str | bool]) -> bool:
+        for value in values:
+            if isinstance(value, bool):
+                return True
+            try:
+                float(value)
+            except (TypeError, ValueError):
+                return True
+        return False
+
     def _resample_colormap(
         self, x_numeric: np.ndarray, values: np.ndarray, target_bins: int
     ) -> tuple[np.ndarray, np.ndarray]:
@@ -779,10 +840,6 @@ class PlotRenderer:
     def _render_one_dimensional_overlay(
         self, widget: pg.PlotWidget, specs: list[PlotSpec], show_axis: bool | None
     ) -> None:
-        self._clear_legend(widget)
-        self._clear_colorbar(widget)
-        self._clear_axis_overlay(widget)
-        widget.clear()
         plot_item = widget.getPlotItem()
         self._style_1d_plot(plot_item)
         cmap_names = ["viridis", "plasma", "cividis", "magma", "turbo"]
@@ -898,9 +955,6 @@ class PlotRenderer:
         show_x_axis: bool | None,
         show_y_axis: bool | None,
     ) -> None:
-        self._clear_legend(widget)
-        self._clear_axis_overlay(widget)
-        widget.clear()
         plot_item = widget.getPlotItem()
         legend = widget.addLegend()
         legend.setParentItem(plot_item)
@@ -913,10 +967,13 @@ class PlotRenderer:
         for spec in one_dim_specs:
             self._render_one_dimensional_background(widget, plot_item, spec, y_min, y_max)
 
+        categorical_ticks: list[tuple[float, str]] | None = None
         for index, spec in enumerate(two_dim_specs):
             color = pg.intColor(index, hues=len(two_dim_specs) * 2)
             label = getattr(spec, "label", None) or spec.dataset_id
-            self._render_two_dimensional_series(widget, spec, color=color, name=label)
+            spec_ticks = self._render_two_dimensional_series(widget, spec, color=color, name=label)
+            if categorical_ticks is None and spec_ticks:
+                categorical_ticks = spec_ticks
 
         first = two_dim_specs[0]
         widget.setLabel("bottom", first.x_label or "X Axis")
@@ -929,6 +986,7 @@ class PlotRenderer:
             first.x_label or "X Axis",
             first.y_label or "Y Axis",
         )
+        self._apply_categorical_ticks(plot_item, categorical_ticks)
 
     def _render_one_dimensional_background(
         self,
@@ -1256,7 +1314,7 @@ class PlotRenderer:
             plot_item.showAxis(axis_name, show=True)
             try:
                 axis.show()
-                axis.setStyle(showValues=True)
+                axis.setStyle(showValues=True, tickLength=_DEFAULT_AXIS_TICK_LENGTH)
                 axis.setPen(axis.textPen())
                 axis.setTextPen(axis.textPen())
                 axis.setTicks(None)
@@ -1278,6 +1336,18 @@ class PlotRenderer:
                 axis.setHeight(0)
             elif axis_name == "left":
                 axis.setWidth(0)
+        except Exception:
+            pass
+
+    @staticmethod
+    def _apply_categorical_ticks(
+        plot_item: pg.PlotItem, categorical_ticks: list[tuple[float, str]] | None
+    ) -> None:
+        if not categorical_ticks:
+            return
+        axis = plot_item.getAxis("bottom")
+        try:
+            axis.setTicks([categorical_ticks])
         except Exception:
             pass
 

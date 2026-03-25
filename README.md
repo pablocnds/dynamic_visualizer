@@ -20,7 +20,7 @@ Interactive framework for loading processed analytical datasets (JSON) and rende
 
 ## Data Formats
 - JSON inputs must satisfy `src/visualizer/schema/data_payload.schema.json` (packaged as `visualizer/schema/data_payload.schema.json`).
-- Series data uses `x_axis` with an optional `y_axis`; table data uses either flat `column_names` or grouped `column_headers` plus `row_names` and a row-major `content` matrix, with optional `table_title` and `table_style`; range data uses `ranges` as `[start, end]` pairs along the X axis and optional `range_info` entries for an instant floating hover info box.
+- Series data uses `x_axis` with an optional `y_axis`; `x_axis` may be numeric or categorical, and line/scatter/stick plots render categorical X values as labeled positions. Table data uses either flat `column_names` or grouped `column_headers` plus `row_names` and a row-major `content` matrix, with optional `table_title` and `table_style`; range data uses `ranges` as `[start, end]` pairs along the X axis and optional `range_info` entries for an instant floating hover info box.
 - `data.kind` is optional (`series`, `table`, or `ranges`); when omitted the loader auto-detects based on the available fields (range payloads warn when `data.kind` is missing).
 - CSV support is temporarily disabled and will return in a future update.
 

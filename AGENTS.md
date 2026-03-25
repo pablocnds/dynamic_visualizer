@@ -11,7 +11,8 @@ Guidelines for working on this repository across sessions.
 ## Testing and Quality
 - Maintain good test coverage and keep tests meaningful (avoid superficial or redundant tests).
 - Prefer adding tests when behavior changes or new features are added.
-- Use `PYTHONPATH=src pytest ...` when running tests locally.
+- Use the repository-local virtualenv for verification commands; prefer `PYTHONPATH=src .venv/bin/pytest ...`
+  and `.venv/bin/python ...` over the system interpreter so the Qt/PyQtGraph stack matches the project.
 - After completing code changes, rebuild the package and reinstall it into the repository-local virtualenv (`.venv`) so the environment matches the current source.
 - After verification, create a git commit for the completed change set so repository history stays current. Avoid committing generated-only version churn unless explicitly requested.
 

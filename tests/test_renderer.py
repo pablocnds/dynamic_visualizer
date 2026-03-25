@@ -128,6 +128,72 @@ def test_stick_render_draws_vertical_sticks(qt_app: QtWidgets.QApplication) -> N
     assert pen.color().green() > 100
 
 
+def test_line_render_supports_categorical_x_axis(qt_app: QtWidgets.QApplication) -> None:  # noqa: ARG001
+    renderer = PlotRenderer()
+    widget = pg.PlotWidget()
+    spec = PlotSpec(
+        dataset_id="categorical-line",
+        label=None,
+        x=["low", "mid", "high"],
+        y=[1.0, 2.0, 3.0],
+        x_label="category",
+        y_label="value",
+        visualization=VisualizationType.LINE,
+    )
+
+    renderer.render(widget, spec)
+
+    plot_items = [item for item in widget.getPlotItem().items if isinstance(item, pg.PlotDataItem)]
+    assert plot_items
+    x_data, _y_data = plot_items[0].getData()
+    assert list(x_data) == [0.0, 1.0, 2.0]
+    axis = widget.getPlotItem().getAxis("bottom")
+    assert getattr(axis, "_tickLevels", None) == [[
+        (0.0, "low"),
+        (1.0, "mid"),
+        (2.0, "high"),
+    ]]
+
+
+def test_render_resets_one_dimensional_widget_state_before_two_dimensional_plot(
+    qt_app: QtWidgets.QApplication,  # noqa: ARG001
+) -> None:
+    renderer = PlotRenderer()
+    widget = pg.PlotWidget()
+    colormap_spec = PlotSpec(
+        dataset_id="one-d",
+        label=None,
+        x=[0.0, 1.0, 2.0],
+        y=[1.0, 2.0, 3.0],
+        x_label="x",
+        y_label="y",
+        visualization=VisualizationType.COLORMAP,
+    )
+    line_spec = PlotSpec(
+        dataset_id="two-d",
+        label=None,
+        x=[0.0, 1.0, 2.0],
+        y=[1.0, 3.0, 2.0],
+        x_label="x",
+        y_label="y",
+        visualization=VisualizationType.LINE,
+    )
+
+    renderer.render(widget, colormap_spec)
+    view_box = widget.getPlotItem().getViewBox()
+    assert view_box.state["mouseEnabled"] == [True, False]
+    assert view_box.state["limits"]["yRange"] == [1.0, 1.0]
+
+    renderer.render(widget, line_spec)
+
+    assert view_box.state["mouseEnabled"] == [True, True]
+    assert view_box.state["limits"]["yRange"] == [None, None]
+    assert not any(isinstance(item, pg.ImageItem) for item in widget.getPlotItem().items)
+    assert any(isinstance(item, pg.PlotDataItem) for item in widget.getPlotItem().items)
+    assert widget.getPlotItem().getAxis("bottom").style["showValues"] is True
+    assert widget.getPlotItem().getAxis("bottom").style["tickLength"] == -5
+
+
 def test_line_style_params_apply_width_color_and_alpha(qt_app: QtWidgets.QApplication) -> None:  # noqa: ARG001
     renderer = PlotRenderer()
     widget = pg.PlotWidget()

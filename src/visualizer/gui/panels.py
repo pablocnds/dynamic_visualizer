@@ -30,6 +30,7 @@ class PanelManager:
         self._synchronize_x = False
 
     def clear(self, layout: QtWidgets.QVBoxLayout) -> None:
+        self._apply_x_axis_synchronization(False)
         while layout.count():
             item = layout.takeAt(0)
             widget = item.widget()
@@ -98,8 +99,6 @@ class PanelManager:
                 separator.setFixedHeight(1)
                 container_layout.addWidget(separator)
         self._panel_order = ordered_names
-        if synchronize_x_axis:
-            self.synchronize_x_axes()
         return stretches, warning
 
     def update_titles(self, panels: List[tuple[SubcardDefinition, list, List[Path], str]]) -> None:
@@ -133,7 +132,19 @@ class PanelManager:
         return self._panel_kind_by_name.get(name)
 
     def synchronize_x_axes(self) -> None:
-        if len(self._panel_plots) < 2:
+        self._apply_x_axis_synchronization(True)
+
+    def apply_x_axis_synchronization(self, enabled: bool) -> None:
+        self._apply_x_axis_synchronization(enabled)
+
+    def _apply_x_axis_synchronization(self, enabled: bool) -> None:
+        self._synchronize_x = enabled
+        for plot in self._panel_plots:
+            try:
+                plot.getPlotItem().setXLink(None)
+            except Exception:
+                continue
+        if not enabled or len(self._panel_plots) < 2:
             return
         master_vb = self._panel_plots[0].getPlotItem().getViewBox()
         for plot in self._panel_plots[1:]:
@@ -141,8 +152,7 @@ class PanelManager:
                 plot.getPlotItem().setXLink(master_vb)
             except Exception:
                 continue
-        if self._synchronize_x:
-            self._equalize_x_ranges()
+        self._equalize_x_ranges()
 
     def _equalize_x_ranges(self) -> None:
         """Ensure all linked plots start with a common X range covering all data."""

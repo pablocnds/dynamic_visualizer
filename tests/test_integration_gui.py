@@ -599,3 +599,83 @@ def test_save_state_persists_active_card_selection(
         "DATASET": "dataset_beta",
         "CLASS": "class_C",
     }
+
+
+def test_card_switch_updates_current_session_and_recent_history_live(
+    qt_app: QtWidgets.QApplication, monkeypatch: pytest.MonkeyPatch  # noqa: ARG001
+) -> None:
+    cards_dir = Path("examples/cards").resolve()
+    card_a = cards_dir / "1-simple_card.toml"
+    card_b = cards_dir / "2-multivariable_card.toml"
+    captured: dict[str, object] = {}
+
+    monkeypatch.setattr("visualizer.gui.main_window.StateManager.load", lambda _self: {})
+
+    def _capture_save(_self, state: dict) -> None:
+        captured["state"] = state
+
+    monkeypatch.setattr("visualizer.gui.main_window.StateManager.save", _capture_save)
+
+    window = MainWindow(data_dir=None, cards_dir=cards_dir)
+    window._activate_card(card_a)  # type: ignore[attr-defined]
+    window._activate_card(card_b)  # type: ignore[attr-defined]
+    window._handle_variable_selection("DATASET", "dataset_beta")  # type: ignore[attr-defined]
+    window._handle_variable_selection("CLASS", "class_C")  # type: ignore[attr-defined]
+
+    persisted = captured.get("state")
+    assert isinstance(persisted, dict)
+
+    current = persisted.get("current_session")
+    assert isinstance(current, dict)
+    assert current["card_dir"] == str(cards_dir)
+    assert current["card_file"] == str(card_b)
+    assert current["card_selection"] == {
+        "DATASET": "dataset_beta",
+        "CLASS": "class_C",
+    }
+
+    recent = persisted.get("recent_sessions")
+    assert isinstance(recent, list)
+    assert len(recent) == 1
+    assert recent[0]["card_dir"] == str(cards_dir)
+    assert recent[0]["card_file"] == str(card_b)
+    assert recent[0]["card_selection"] == {
+        "DATASET": "dataset_beta",
+        "CLASS": "class_C",
+    }
+
+
+def test_save_state_updates_existing_cards_dir_session_in_place(
+    qt_app: QtWidgets.QApplication, monkeypatch: pytest.MonkeyPatch  # noqa: ARG001
+) -> None:
+    cards_dir = Path("examples/cards").resolve()
+    card_a = cards_dir / "1-simple_card.toml"
+    card_b = cards_dir / "2-multivariable_card.toml"
+    captured: dict[str, object] = {}
+
+    monkeypatch.setattr("visualizer.gui.main_window.StateManager.load", lambda _self: {})
+
+    def _capture_save(_self, state: dict) -> None:
+        captured["state"] = state
+
+    monkeypatch.setattr("visualizer.gui.main_window.StateManager.save", _capture_save)
+
+    window = MainWindow(data_dir=None, cards_dir=cards_dir)
+    window._activate_card(card_a)  # type: ignore[attr-defined]
+    window._save_state()  # type: ignore[attr-defined]
+    window._activate_card(card_b)  # type: ignore[attr-defined]
+    window._handle_variable_selection("DATASET", "dataset_beta")  # type: ignore[attr-defined]
+    window._handle_variable_selection("CLASS", "class_C")  # type: ignore[attr-defined]
+    window._save_state()  # type: ignore[attr-defined]
+
+    persisted = captured.get("state")
+    assert isinstance(persisted, dict)
+    recent = persisted.get("recent_sessions")
+    assert isinstance(recent, list)
+    assert len(recent) == 1
+    assert recent[0]["card_dir"] == str(cards_dir)
+    assert recent[0]["card_file"] == str(card_b)
+    assert recent[0]["card_selection"] == {
+        "DATASET": "dataset_beta",
+        "CLASS": "class_C",
+    }

@@ -32,6 +32,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self._data_dir = data_dir
         self._cards_dir = cards_dir
+        self._data_source_kind: str | None = "dir" if data_dir else None
+        self._card_source_kind: str | None = "dir" if cards_dir else None
         self._startup_explicit_data_source = data_dir is not None
         self._startup_explicit_card_source = cards_dir is not None
         self._state_manager = StateManager()
@@ -56,7 +58,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._pending_card_file: Optional[Path] = None
         self._pending_card_selection: Dict[str, str] | None = None
         self._suppress_card_selection_changes = False
-        self._last_variable_values: Dict[str, str] = {}
+        self._suspend_state_persistence = True
         self._view: MainWindowView | None = None
         self._visualization_override: VisualizationType | None = None
         self._list_stack: QtWidgets.QStackedWidget | None = None
@@ -84,6 +86,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._restore_state()
         self._load_initial_sources()
         self._sync_initial_view_state()
+        self._suspend_state_persistence = False
 
     def _build_ui(self) -> None:
         self._view = MainWindowView(self)
@@ -250,21 +253,27 @@ class MainWindow(QtWidgets.QMainWindow):
     def _clear_recent_sessions(self) -> None:
         self._recent_sessions = []
         self._refresh_recent_sessions_menu()
-        state = self._current_session_snapshot()
-        state["recent_sessions"] = []
-        self._state_manager.save(state)
+        self._state_manager.save(self._build_persisted_state())
 
     def _session_label(self, session: Dict[str, Any]) -> str:
+        card_dir = session.get("card_dir")
+        if isinstance(card_dir, str):
+            label = f"Cards: {self._format_path(Path(card_dir))}"
+            card_file = session.get("card_file")
+            if isinstance(card_file, str):
+                return f"{label} [{Path(card_file).name}]"
+            return label
         card_file = session.get("card_file")
         if isinstance(card_file, str):
             path = Path(card_file)
             return f"Card: {path.name} ({self._format_path(path.parent)})"
-        card_dir = session.get("card_dir")
-        if isinstance(card_dir, str):
-            return f"Cards: {self._format_path(Path(card_dir))}"
         data_dir = session.get("data_dir")
         if isinstance(data_dir, str):
-            return f"Data: {self._format_path(Path(data_dir))}"
+            label = f"Data: {self._format_path(Path(data_dir))}"
+            data_file = session.get("data_file")
+            if isinstance(data_file, str):
+                return f"{label} [{Path(data_file).name}]"
+            return label
         data_file = session.get("data_file")
         if isinstance(data_file, str):
             path = Path(data_file)
@@ -281,39 +290,48 @@ class MainWindow(QtWidgets.QMainWindow):
             self._set_status_message("Selected previous session is no longer available.")
             return
         self._apply_session_snapshot(normalized)
-        self._remember_recent_session(normalized)
-        self._refresh_recent_sessions_menu()
         self._set_status_message("Loaded previous session.")
 
     def _apply_session_snapshot(self, snapshot: Dict[str, Any]) -> None:
-        self._clear_card_selection()
-        self._reset_data_state()
-        self._data_dir = None
-        self._cards_dir = None
-        self._controller.set_cards_dir(None)
-        self._card_loader = self._controller.card_loader
-        self._card_list.clear()
-        self._pending_card_file = None
-        self._pending_card_selection = None
-        self._pending_data_file = None
-        self._added_files.clear()
+        was_suspended = self._suspend_state_persistence
+        self._suspend_state_persistence = True
+        try:
+            self._clear_card_selection()
+            self._reset_data_state()
+            self._data_dir = None
+            self._cards_dir = None
+            self._data_source_kind = None
+            self._card_source_kind = None
+            self._controller.set_cards_dir(None)
+            self._card_loader = self._controller.card_loader
+            self._card_list.clear()
+            self._pending_card_file = None
+            self._pending_card_selection = None
+            self._pending_data_file = None
+            self._added_files.clear()
 
-        self._restore_snapshot_fields(snapshot)
-        self._load_initial_sources()
-        self._sync_initial_view_state()
-        self._update_sidebar_mode()
+            self._restore_snapshot_fields(snapshot)
+            self._load_initial_sources()
+            self._sync_initial_view_state()
+            self._update_sidebar_mode()
+        finally:
+            self._suspend_state_persistence = was_suspended
+        self._save_state()
 
     def _restore_snapshot_fields(self, snapshot: Dict[str, Any]) -> None:
         data_dir = snapshot.get("data_dir")
         card_file = snapshot.get("card_file")
         card_dir = snapshot.get("card_dir")
         data_file = snapshot.get("data_file")
+        data_source_kind = snapshot.get("data_source_kind")
+        card_source_kind = snapshot.get("card_source_kind")
         card_selection = self._normalize_card_selection(snapshot.get("card_selection"))
         added_files = snapshot.get("added_files", [])
         if isinstance(data_dir, str):
             path = Path(data_dir)
             if path.exists():
                 self._data_dir = path
+                self._data_source_kind = "dir"
         if isinstance(added_files, list):
             for file_path in added_files:
                 if not isinstance(file_path, str):
@@ -321,23 +339,28 @@ class MainWindow(QtWidgets.QMainWindow):
                 path = Path(file_path)
                 if path.exists():
                     self._added_files.add(path)
+        if self._added_files and self._data_source_kind != "dir":
+            self._data_source_kind = "files"
         card_file_restored = False
         if isinstance(card_file, str):
             path = Path(card_file)
             if path.exists():
                 self._pending_card_selection = card_selection or None
                 self._pending_card_file = path
-                self._set_card_loader(path.parent, select_card=path)
+                loader_source_kind = "file" if card_source_kind == "file" else "dir"
+                self._set_card_loader(path.parent, select_card=path, source_kind=loader_source_kind)
                 card_file_restored = True
         if not card_file_restored and isinstance(card_dir, str):
             self._pending_card_selection = None
             path = Path(card_dir)
             if path.exists() and path.is_dir():
-                self._set_card_loader(path)
+                self._set_card_loader(path, source_kind="dir")
         if isinstance(data_file, str):
             path = Path(data_file)
             if path.exists():
                 self._pending_data_file = path
+                if data_source_kind == "files" or self._data_source_kind is None:
+                    self._data_source_kind = "files"
 
     def _remember_recent_session(self, session: Dict[str, Any]) -> None:
         if not session:
@@ -353,12 +376,28 @@ class MainWindow(QtWidgets.QMainWindow):
         self._recent_sessions = sessions
 
     def _session_key(self, session: Dict[str, Any]) -> tuple:
+        added_files = tuple(session.get("added_files", [])) if isinstance(session.get("added_files"), list) else ()
+        data_source_kind = session.get("data_source_kind")
+        if data_source_kind == "dir":
+            data_identity = (session.get("data_dir"), added_files)
+        elif data_source_kind == "files":
+            data_identity = added_files or ((session.get("data_file"),) if session.get("data_file") else ())
+        else:
+            data_identity = ()
+
+        card_source_kind = session.get("card_source_kind")
+        if card_source_kind == "dir":
+            card_identity = session.get("card_dir")
+        elif card_source_kind == "file":
+            card_identity = session.get("card_file")
+        else:
+            card_identity = ()
+
         return (
-            session.get("data_dir"),
-            session.get("data_file"),
-            session.get("card_dir"),
-            session.get("card_file"),
-            tuple(session.get("added_files", [])) if isinstance(session.get("added_files"), list) else (),
+            data_source_kind,
+            data_identity,
+            card_source_kind,
+            card_identity,
         )
 
     def _sanitize_recent_sessions(self, entries: object) -> List[Dict[str, Any]]:
@@ -383,6 +422,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _normalize_session_entry(self, entry: Dict[str, Any]) -> Dict[str, Any] | None:
         normalized: Dict[str, Any] = {}
+        data_source_kind = self._normalize_source_kind(entry.get("data_source_kind"), {"dir", "files"})
+        card_source_kind = self._normalize_source_kind(entry.get("card_source_kind"), {"dir", "file"})
 
         data_dir = entry.get("data_dir")
         if isinstance(data_dir, str):
@@ -422,7 +463,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 if path.is_file():
                     valid_added.append(str(path))
             if valid_added:
-                normalized["added_files"] = valid_added
+                normalized["added_files"] = sorted(valid_added)
 
         card_selection = self._normalize_card_selection(entry.get("card_selection"))
         if card_selection:
@@ -430,10 +471,30 @@ class MainWindow(QtWidgets.QMainWindow):
 
         if "card_file" in normalized and "card_dir" not in normalized:
             normalized["card_dir"] = str(Path(normalized["card_file"]).parent)
+        if data_source_kind == "dir" and "data_dir" in normalized:
+            normalized["data_source_kind"] = "dir"
+        elif "data_dir" in normalized:
+            normalized["data_source_kind"] = "dir"
+        elif data_source_kind == "files" and ("added_files" in normalized or "data_file" in normalized):
+            normalized["data_source_kind"] = "files"
+        elif "added_files" in normalized or "data_file" in normalized:
+            normalized["data_source_kind"] = "files"
+
+        if card_source_kind == "file" and "card_file" in normalized:
+            normalized["card_source_kind"] = "file"
+        elif "card_dir" in normalized:
+            normalized["card_source_kind"] = "dir"
+        elif "card_file" in normalized:
+            normalized["card_source_kind"] = "file"
 
         if not normalized:
             return None
         return normalized
+
+    def _normalize_source_kind(self, value: object, allowed: set[str]) -> str | None:
+        if isinstance(value, str) and value in allowed:
+            return value
+        return None
 
     def _normalize_card_selection(self, selection: object) -> Dict[str, str]:
         if not isinstance(selection, dict):
@@ -450,10 +511,10 @@ class MainWindow(QtWidgets.QMainWindow):
     def _snapshot_with_startup_precedence(self, snapshot: Dict[str, Any]) -> Dict[str, Any] | None:
         merged = dict(snapshot)
         if self._startup_explicit_data_source:
-            for key in ("data_dir", "data_file", "added_files"):
+            for key in ("data_dir", "data_file", "added_files", "data_source_kind"):
                 merged.pop(key, None)
         if self._startup_explicit_card_source:
-            for key in ("card_dir", "card_file", "card_selection"):
+            for key in ("card_dir", "card_file", "card_selection", "card_source_kind"):
                 merged.pop(key, None)
         return merged or None
 
@@ -668,8 +729,11 @@ class MainWindow(QtWidgets.QMainWindow):
             if selected_files:
                 path = Path(selected_files[0])
                 self._add_file_to_list(path)
+                if self._data_dir is None:
+                    self._data_source_kind = "files"
                 self._sidebar_mode = "data"
                 self._update_sidebar_mode()
+                self._save_state()
 
     def _handle_choose_folder(self) -> None:
         dialog = QtWidgets.QFileDialog(self)
@@ -681,9 +745,11 @@ class MainWindow(QtWidgets.QMainWindow):
                 self._clear_card_selection()
                 self._reset_data_state()
                 self._data_dir = Path(folders[0])
+                self._data_source_kind = "dir"
                 self._refresh_file_list()
                 self._sidebar_mode = "data"
                 self._update_sidebar_mode()
+                self._save_state()
 
     def _handle_choose_card_file(self) -> None:
         dialog = QtWidgets.QFileDialog(self)
@@ -697,8 +763,9 @@ class MainWindow(QtWidgets.QMainWindow):
             if files:
                 self._reset_data_state()
                 self._data_dir = None
+                self._data_source_kind = None
                 card_path = Path(files[0])
-                self._set_card_loader(card_path.parent, select_card=card_path)
+                self._set_card_loader(card_path.parent, select_card=card_path, source_kind="file")
                 self._update_sidebar_mode()
 
     def _handle_file_selection(self) -> None:
@@ -711,6 +778,7 @@ class MainWindow(QtWidgets.QMainWindow):
         if path:
             self._load_and_render(Path(path))
         self._update_sidebar_mode()
+        self._save_state()
 
     def _handle_visualization_change(self) -> None:
         if self._card_session:
@@ -789,6 +857,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self._panel_manager.clear(self._multi_plot_layout)
             self._plot_stack.setCurrentWidget(self._single_plot_widget)
             self._active_card_path = None
+            self._save_state()
             return
         self._file_list.blockSignals(True)
         self._file_list.clearSelection()
@@ -803,8 +872,6 @@ class MainWindow(QtWidgets.QMainWindow):
         selection = preferred_selection
         if selection is None and self._pending_card_selection:
             selection = dict(self._pending_card_selection)
-        elif selection is None and self._last_variable_values:
-            selection = dict(self._last_variable_values)
         try:
             self._sidebar_mode = "card"
             session = self._controller.activate_card(
@@ -827,8 +894,8 @@ class MainWindow(QtWidgets.QMainWindow):
             self._update_navigation_buttons()
             self._populate_variable_controls()
             self._render_current_card_selection()
-            self._update_last_variable_values(session)
             self._update_sidebar_mode()
+            self._save_state()
         except Exception as exc:  # pragma: no cover - GUI feedback
             self._card_session = None
             self._set_status_message(f"Card error: {exc}")
@@ -838,6 +905,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self._active_card_path = None
             self._update_loaded_files([])
             self._update_sidebar_mode()
+            self._save_state()
         finally:
             self._pending_card_selection = None
             self._pending_card_file = None
@@ -857,8 +925,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self._card_session = self._controller.card_session
             self._sync_variable_controls()
             self._render_current_card_selection()
-            if self._card_session:
-                self._update_last_variable_values(self._card_session)
+            self._save_state()
         except Exception as exc:  # pragma: no cover - GUI feedback
             self._set_status_message(f"Card error: {exc}")
         return True
@@ -902,6 +969,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self._plot_stack.setCurrentWidget(self._single_plot_widget)
         self._active_card_path = None
         self._pending_card_file = None
+        if self._card_source_kind == "file":
+            self._card_source_kind = "dir" if self._cards_dir and self._cards_dir.exists() else None
         self._update_loaded_files([])
 
     def _update_navigation_buttons(self) -> None:
@@ -914,13 +983,16 @@ class MainWindow(QtWidgets.QMainWindow):
         self._prev_view_button.setEnabled(active)
         self._next_view_button.setEnabled(active)
 
-    def _set_card_loader(self, path: Path, select_card: Path | None = None) -> None:
+    def _set_card_loader(
+        self, path: Path, select_card: Path | None = None, source_kind: str = "dir"
+    ) -> None:
+        self._clear_card_selection()
         self._controller.set_cards_dir(path)
         self._card_loader = self._controller.card_loader
         self._cards_dir = path
+        self._card_source_kind = source_kind
         self._sidebar_mode = "card"
         self._update_source_label("card")
-        self._clear_card_selection()
         self._load_cards()
         if select_card:
             self._pending_card_file = select_card
@@ -930,31 +1002,51 @@ class MainWindow(QtWidgets.QMainWindow):
             self._pending_card_file = None
             self._pending_card_selection = None
         self._update_sidebar_mode()
+        self._save_state()
 
     def _restore_state(self) -> None:
         self._recent_sessions = self._sanitize_recent_sessions(
             self._saved_state.get("recent_sessions", [])
         )
-        current_snapshot = self._normalize_session_entry(self._saved_state)
+        current_entry = self._saved_state.get("current_session")
+        if not isinstance(current_entry, dict):
+            current_entry = self._saved_state
+        current_snapshot = self._normalize_session_entry(current_entry)
         if current_snapshot:
             startup_snapshot = self._snapshot_with_startup_precedence(current_snapshot)
             if startup_snapshot:
                 self._restore_snapshot_fields(startup_snapshot)
             self._remember_recent_session(current_snapshot)
 
-    def _save_state(self) -> None:
-        state = self._current_session_snapshot()
-        self._remember_recent_session(state)
+    def _build_persisted_state(self) -> Dict[str, Any]:
+        state: Dict[str, Any] = {}
+        current_session = self._current_session_snapshot()
+        if current_session:
+            state["current_session"] = current_session
+            state.update(current_session)
         state["recent_sessions"] = self._recent_sessions
+        return state
+
+    def _save_state(self, force: bool = False) -> None:
+        if self._suspend_state_persistence and not force:
+            return
+        current_session = self._current_session_snapshot()
+        self._remember_recent_session(current_session)
         self._refresh_recent_sessions_menu()
-        self._state_manager.save(state)
+        self._state_manager.save(self._build_persisted_state())
 
     def _current_session_snapshot(self) -> Dict[str, Any]:
         snapshot: Dict[str, Any] = {}
+        extras = sorted(str(path.resolve()) for path in self._added_files if path.exists())
         if self._data_dir and self._data_dir.exists():
             snapshot["data_dir"] = str(self._data_dir.resolve())
+            snapshot["data_source_kind"] = "dir"
         if self._current_path and self._current_path.exists():
             snapshot["data_file"] = str(self._current_path.resolve())
+        elif self._pending_data_file and self._pending_data_file.exists():
+            snapshot["data_file"] = str(self._pending_data_file.resolve())
+        if self._data_source_kind == "files" and ("data_file" in snapshot or extras):
+            snapshot["data_source_kind"] = "files"
         if self._active_card_path and self._active_card_path.exists():
             snapshot["card_file"] = str(self._active_card_path.resolve())
             if self._card_session and self._card_session.selection:
@@ -963,7 +1055,9 @@ class MainWindow(QtWidgets.QMainWindow):
             snapshot["card_file"] = str(self._pending_card_file.resolve())
         if self._cards_dir and self._cards_dir.exists():
             snapshot["card_dir"] = str(self._cards_dir.resolve())
-        extras = [str(path.resolve()) for path in self._added_files if path.exists()]
+            snapshot["card_source_kind"] = "dir"
+        if self._card_source_kind == "file" and "card_file" in snapshot:
+            snapshot["card_source_kind"] = "file"
         if extras:
             snapshot["added_files"] = extras
         normalized = self._normalize_session_entry(snapshot)
@@ -1251,7 +1345,7 @@ class MainWindow(QtWidgets.QMainWindow):
         app = QtWidgets.QApplication.instance()
         if app is not None:
             app.removeEventFilter(self)
-        self._save_state()
+        self._save_state(force=True)
         super().closeEvent(event)
 
     def eventFilter(self, watched: QtCore.QObject, event: QtCore.QEvent) -> bool:  # type: ignore[override]
@@ -1319,8 +1413,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self._card_session = self._controller.card_session
             self._sync_variable_controls()
             self._render_current_card_selection()
-            if self._card_session:
-                self._update_last_variable_values(self._card_session)
+            self._save_state()
         except Exception as exc:  # pragma: no cover - GUI feedback
             self._set_status_message(f"Card selection error: {exc}")
 
@@ -1444,11 +1537,6 @@ class MainWindow(QtWidgets.QMainWindow):
         if show_y is None:
             show_y = True
         return show_x, show_y
-
-    def _update_last_variable_values(self, session: CardSession) -> None:
-        for var, value in session.selection.items():
-            if value:
-                self._last_variable_values[var] = value
 
     def _set_warning(self, message: str | None) -> None:
         if not self._warning_label:

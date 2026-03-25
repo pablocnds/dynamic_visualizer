@@ -1,5 +1,4 @@
 import json
-import os
 from contextlib import contextmanager
 from typing import Iterator
 from pathlib import Path
@@ -12,14 +11,7 @@ pg = pytest.importorskip("pyqtgraph", reason="pyqtgraph not installed; install r
 
 from visualizer.gui.main_window import MainWindow
 
-
-@pytest.fixture(scope="module")
-def app() -> QtWidgets.QApplication:
-    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-    existing = QtWidgets.QApplication.instance()
-    if existing:
-        return existing
-    return QtWidgets.QApplication([])
+pytestmark = pytest.mark.gui
 
 
 @contextmanager
@@ -85,7 +77,7 @@ def _create_missing_panel_window(tmp_path: Path) -> tuple[MainWindow, Path]:
     return window, card_path
 
 
-def test_colormap_card_renders_items(app: QtWidgets.QApplication) -> None:  # noqa: ARG001
+def test_colormap_card_renders_items(qt_app: QtWidgets.QApplication) -> None:  # noqa: ARG001
     window = _create_window()
     card_path = window._cards_dir / "8-colormap_card.toml"  # type: ignore[attr-defined]
     with capture_qt_messages() as messages:
@@ -97,7 +89,7 @@ def test_colormap_card_renders_items(app: QtWidgets.QApplication) -> None:  # no
     assert not [m for m in messages if "invalid row" in m or "Scale" in m]
 
 
-def test_eventline_card_renders_items(app: QtWidgets.QApplication) -> None:  # noqa: ARG001
+def test_eventline_card_renders_items(qt_app: QtWidgets.QApplication) -> None:  # noqa: ARG001
     window = _create_window()
     card_path = window._cards_dir / "9-eventline_card.toml"  # type: ignore[attr-defined]
     with capture_qt_messages() as messages:
@@ -109,7 +101,7 @@ def test_eventline_card_renders_items(app: QtWidgets.QApplication) -> None:  # n
     assert not [m for m in messages if "invalid row" in m or "Scale" in m]
 
 
-def test_stick_card_renders_items(app: QtWidgets.QApplication) -> None:  # noqa: ARG001
+def test_stick_card_renders_items(qt_app: QtWidgets.QApplication) -> None:  # noqa: ARG001
     window = _create_window()
     card_path = window._cards_dir / "13-stick_card.toml"  # type: ignore[attr-defined]
     with capture_qt_messages() as messages:
@@ -121,7 +113,7 @@ def test_stick_card_renders_items(app: QtWidgets.QApplication) -> None:  # noqa:
     assert not [m for m in messages if "invalid row" in m or "Scale" in m]
 
 
-def test_one_dim_overlay_has_no_colorbars(app: QtWidgets.QApplication) -> None:  # noqa: ARG001
+def test_one_dim_overlay_has_no_colorbars(qt_app: QtWidgets.QApplication) -> None:  # noqa: ARG001
     window = _create_window()
     card_path = window._cards_dir / "10-overlay_1d_card.toml"  # type: ignore[attr-defined]
     window._activate_card(card_path)
@@ -132,7 +124,7 @@ def test_one_dim_overlay_has_no_colorbars(app: QtWidgets.QApplication) -> None: 
     assert len(colorbars) == 0
 
 
-def test_colorbars_absent_for_1d_cards(app: QtWidgets.QApplication) -> None:  # noqa: ARG001
+def test_colorbars_absent_for_1d_cards(qt_app: QtWidgets.QApplication) -> None:  # noqa: ARG001
     window = _create_window()
     window._activate_card(window._cards_dir / "8-colormap_card.toml")  # type: ignore[attr-defined]
     plot = window._panel_plots[0] if window._panel_plots else None  # type: ignore[attr-defined]
@@ -149,7 +141,7 @@ def test_colorbars_absent_for_1d_cards(app: QtWidgets.QApplication) -> None:  # 
     assert len(colorbars_after) == 0
 
 
-def test_range_overlay_renders_items(app: QtWidgets.QApplication) -> None:  # noqa: ARG001
+def test_range_overlay_renders_items(qt_app: QtWidgets.QApplication) -> None:  # noqa: ARG001
     window = _create_window()
     card_path = window._cards_dir / "12-range_overlay_card.toml"  # type: ignore[attr-defined]
     window._activate_card(card_path)
@@ -163,7 +155,9 @@ def test_range_overlay_renders_items(app: QtWidgets.QApplication) -> None:  # no
     assert "#plotHoverInfoBox" in window.styleSheet()
 
 
-def test_grouped_table_card_renders_grouped_header(app: QtWidgets.QApplication) -> None:  # noqa: ARG001
+def test_grouped_table_card_renders_grouped_header(
+    qt_app: QtWidgets.QApplication  # noqa: ARG001
+) -> None:
     window = _create_window()
     card_path = window._cards_dir / "15-grouped_table_card.toml"  # type: ignore[attr-defined]
     window._activate_card(card_path)
@@ -180,7 +174,7 @@ def test_grouped_table_card_renders_grouped_header(app: QtWidgets.QApplication) 
     assert table.table_title() == "Grouped Model Comparison"
 
 
-def test_colorbars_absent_after_rerender(app: QtWidgets.QApplication) -> None:  # noqa: ARG001
+def test_colorbars_absent_after_rerender(qt_app: QtWidgets.QApplication) -> None:  # noqa: ARG001
     window = _create_window()
     window._activate_card(window._cards_dir / "10-overlay_1d_card.toml")  # type: ignore[attr-defined]
     plot = window._panel_plots[0] if window._panel_plots else None  # type: ignore[attr-defined]
@@ -195,7 +189,9 @@ def test_colorbars_absent_after_rerender(app: QtWidgets.QApplication) -> None:  
     assert len(second_colorbars) == 0
 
 
-def test_synchronized_axes_respect_axis_visibility(app: QtWidgets.QApplication) -> None:  # noqa: ARG001
+def test_synchronized_axes_respect_axis_visibility(
+    qt_app: QtWidgets.QApplication  # noqa: ARG001
+) -> None:
     window = _create_window()
     window._activate_card(window._cards_dir / "11-sync_demo_card.toml")  # type: ignore[attr-defined]
     plots = window._panel_plots  # type: ignore[attr-defined]
@@ -209,7 +205,7 @@ def test_synchronized_axes_respect_axis_visibility(app: QtWidgets.QApplication) 
 
 
 def test_missing_panels_clear_previous_items(
-    app: QtWidgets.QApplication, tmp_path: Path  # noqa: ARG001
+    qt_app: QtWidgets.QApplication, tmp_path: Path  # noqa: ARG001
 ) -> None:
     window, card_path = _create_missing_panel_window(tmp_path)
     window._activate_card(card_path)
@@ -233,7 +229,7 @@ def test_missing_panels_clear_previous_items(
 
 
 def test_restore_state_uses_card_dir_when_card_file_is_missing(
-    app: QtWidgets.QApplication, tmp_path: Path, monkeypatch: pytest.MonkeyPatch  # noqa: ARG001
+    qt_app: QtWidgets.QApplication, tmp_path: Path, monkeypatch: pytest.MonkeyPatch  # noqa: ARG001
 ) -> None:
     cards_dir = tmp_path / "cards"
     cards_dir.mkdir(parents=True)
@@ -256,7 +252,7 @@ def test_restore_state_uses_card_dir_when_card_file_is_missing(
 
 
 def test_constructor_paths_take_precedence_over_saved_state(
-    app: QtWidgets.QApplication, tmp_path: Path, monkeypatch: pytest.MonkeyPatch  # noqa: ARG001
+    qt_app: QtWidgets.QApplication, tmp_path: Path, monkeypatch: pytest.MonkeyPatch  # noqa: ARG001
 ) -> None:
     explicit_data = tmp_path / "explicit_data"
     saved_data = tmp_path / "saved_data"
@@ -288,7 +284,7 @@ def test_constructor_paths_take_precedence_over_saved_state(
 
 
 def test_recent_sessions_prune_invalid_or_empty_paths(
-    app: QtWidgets.QApplication, tmp_path: Path, monkeypatch: pytest.MonkeyPatch  # noqa: ARG001
+    qt_app: QtWidgets.QApplication, tmp_path: Path, monkeypatch: pytest.MonkeyPatch  # noqa: ARG001
 ) -> None:
     valid_cards = tmp_path / "cards_valid"
     valid_cards.mkdir(parents=True)
@@ -325,7 +321,7 @@ def test_recent_sessions_prune_invalid_or_empty_paths(
 
 
 def test_open_previous_session_restores_selected_snapshot(
-    app: QtWidgets.QApplication, tmp_path: Path, monkeypatch: pytest.MonkeyPatch  # noqa: ARG001
+    qt_app: QtWidgets.QApplication, tmp_path: Path, monkeypatch: pytest.MonkeyPatch  # noqa: ARG001
 ) -> None:
     data_a = tmp_path / "data_a"
     data_b = tmp_path / "data_b"
@@ -352,7 +348,7 @@ def test_open_previous_session_restores_selected_snapshot(
 
 
 def test_save_state_persists_recent_sessions_history(
-    app: QtWidgets.QApplication, tmp_path: Path, monkeypatch: pytest.MonkeyPatch  # noqa: ARG001
+    qt_app: QtWidgets.QApplication, tmp_path: Path, monkeypatch: pytest.MonkeyPatch  # noqa: ARG001
 ) -> None:
     data_a = tmp_path / "data_a"
     data_b = tmp_path / "data_b"
@@ -385,7 +381,7 @@ def test_save_state_persists_recent_sessions_history(
 
 
 def test_restore_state_restores_active_card_selection(
-    app: QtWidgets.QApplication, monkeypatch: pytest.MonkeyPatch  # noqa: ARG001
+    qt_app: QtWidgets.QApplication, monkeypatch: pytest.MonkeyPatch  # noqa: ARG001
 ) -> None:
     card_path = Path("examples/cards/2-multivariable_card.toml").resolve()
     saved_state = {
@@ -411,7 +407,7 @@ def test_restore_state_restores_active_card_selection(
 
 
 def test_restore_state_keeps_loaded_files_for_active_card(
-    app: QtWidgets.QApplication, monkeypatch: pytest.MonkeyPatch  # noqa: ARG001
+    qt_app: QtWidgets.QApplication, monkeypatch: pytest.MonkeyPatch  # noqa: ARG001
 ) -> None:
     card_path = Path("examples/cards/1-simple_card.toml").resolve()
     saved_state = {
@@ -429,7 +425,7 @@ def test_restore_state_keeps_loaded_files_for_active_card(
 
 
 def test_variable_controls_constrain_all_variables(
-    app: QtWidgets.QApplication, tmp_path: Path, monkeypatch: pytest.MonkeyPatch  # noqa: ARG001
+    qt_app: QtWidgets.QApplication, tmp_path: Path, monkeypatch: pytest.MonkeyPatch  # noqa: ARG001
 ) -> None:
     monkeypatch.setattr("visualizer.gui.main_window.StateManager.load", lambda _self: {})
     monkeypatch.setattr("visualizer.gui.main_window.StateManager.save", lambda _self, _state: None)
@@ -473,7 +469,7 @@ filepath = "<CARD_DIR>/../data/{{DATASET}}/{{SUBSET}}/{{COMPOUND}}/signal.json"
 
 
 def test_save_state_persists_active_card_selection(
-    app: QtWidgets.QApplication, monkeypatch: pytest.MonkeyPatch  # noqa: ARG001
+    qt_app: QtWidgets.QApplication, monkeypatch: pytest.MonkeyPatch  # noqa: ARG001
 ) -> None:
     card_path = Path("examples/cards/2-multivariable_card.toml").resolve()
     captured: dict[str, object] = {}

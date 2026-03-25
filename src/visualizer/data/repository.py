@@ -219,6 +219,10 @@ class DatasetRepository:
             )
         if has_column_names and has_column_headers:
             raise ValueError(f"Use either 'column_names' or 'column_headers', not both: {path}")
+        if "row_names" not in data_section:
+            raise ValueError(f"JSON table payload missing 'row_names': {path}")
+        if "content" not in data_section:
+            raise ValueError(f"JSON table payload missing 'content': {path}")
         if has_column_names and (
             not isinstance(data_section["column_names"], Sequence)
             or isinstance(data_section["column_names"], (str, bytes))

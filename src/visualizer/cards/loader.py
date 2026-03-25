@@ -31,7 +31,11 @@ class CardLoader:
     def list_card_files(self) -> List[Path]:
         if not self._cards_dir.exists():
             return []
-        return sorted(self._cards_dir.glob("*.toml"))
+        return sorted(
+            path
+            for path in self._cards_dir.glob("*.toml")
+            if not path.name.startswith("__")
+        )
 
     def load_definition(self, path: Path) -> CardDefinition:
         path = path.resolve()
@@ -88,7 +92,10 @@ class CardLoader:
                         ),
                         overlay_variable=overlay_var,
                         overlay_labels=_normalize_label_list(config.get("series_label"), len(filepaths)),
-                        overlay_path_filter=_normalize_variable(config.get("overlay_path_filter")),
+                        overlay_path_filter=_validate_regex_pattern(
+                            _normalize_variable(config.get("overlay_path_filter")),
+                            context=f"{path} subcards.{name}.overlay_path_filter",
+                        ),
                     )
                     template = filepaths[0]
                 else:
@@ -145,7 +152,10 @@ class CardLoader:
                     ),
                     overlay_variable=overlay_var,
                     overlay_labels=_normalize_label_list(data.get("series_label"), len(filepaths)),
-                    overlay_path_filter=_normalize_variable(data.get("overlay_path_filter")),
+                    overlay_path_filter=_validate_regex_pattern(
+                        _normalize_variable(data.get("overlay_path_filter")),
+                        context=f"{path} overlay_path_filter",
+                    ),
                 )
                 template = match_template
                 subcards.append(
@@ -396,8 +406,21 @@ def _normalize_filter_map(raw: object) -> Dict[str, str]:
     if raw is None:
         return {}
     if isinstance(raw, dict):
-        return {str(k): str(v) for k, v in raw.items()}
+        normalized = {str(k): str(v) for k, v in raw.items()}
+        for key, value in normalized.items():
+            _validate_regex_pattern(value, context=f"variable_filters.{key}")
+        return normalized
     raise ValueError("variable_filters must be a table of key/value regex strings")
+
+
+def _validate_regex_pattern(value: str | None, *, context: str) -> str | None:
+    if value is None:
+        return None
+    try:
+        re.compile(value)
+    except re.error as exc:
+        raise ValueError(f"{context} must be a valid regex: {exc}") from exc
+    return value
 
 
 def _match_filters(

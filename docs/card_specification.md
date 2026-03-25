@@ -5,6 +5,7 @@ For a concise template-oriented guide, see `docs/cards_reference.md`.
 
 ## Core Concepts
 - `<CARD_DIR>`: directory containing the card; paths are resolved relative to it.
+- Discovery ignores files prefixed with `__` so unofficial/scratch cards stay out of normal card lists.
 - Variables: `{{VAR}}` placeholders replace exactly one directory or filename segment and default to the first alphabetical value. If those defaults do not form a valid discovered combination, the session automatically snaps to the closest valid match. Use named variables even when only one exists; a pivot is optional when there is only one variable.
 - Wildcard (`*`): plain glob segment only; it is not a variable and never exposed in the UI.
 - Pivot: `pivot_chart = "{{VAR}}"` identifies which variable cycles when moving prev/next. If omitted, the first discovered variable (alphabetical) is used.
@@ -22,6 +23,7 @@ For a concise template-oriented guide, see `docs/cards_reference.md`.
 - Axis visibility: `show_x_axis` and `show_y_axis` can be set globally or per subcard to explicitly show/hide axes for plot panels. When `synchronize_axis = true`, X axes are hidden by default unless explicitly enabled. `show_x_axis` controls the 1-D top overlay axis as well as the 2-D bottom axis; `show_y_axis` applies only to 2-D plots.
 - Table style: optional `table_style = { palette = "...", range = [min, max], reverse = true }` can be set globally or per subcard for table datasets. `reverse = true` flips the gradient direction. JSON row/column table style overrides still take precedence over this card-level global fallback; when JSON uses grouped `data.column_headers`, column style rules still index the flattened leaf columns.
 - Overlay discovery: `overlay_variable` marks a variable used only for overlay enumeration; it is not user-selectable and is removed from card variables/pivot logic. Variable-level filters (see below) apply to overlay variables as well; optional `overlay_path_filter` (regex on the resolved path) can further constrain entries.
+- Regex validation: `variable_filters` and `overlay_path_filter` are compiled when the card loads; invalid regexes fail immediately with a clear error.
 - Overlay labels: optional `series_label` (string or list) names filepath entries. For table datasets, this label is shown as the compact table title.
 
 ## Global Section (optional)
@@ -122,3 +124,4 @@ When `chart_style` entries are missing/shorter than `filepath`, remaining series
 - `chart_height` accepts percentages; totals above 100% are clamped with a warning.
 - `chart_style` must be recognized; per-series lists may be shorter than `filepath` arrays and will be extended using the last value/global style.
 - Missing or mismatched variables in `pivot_chart` cause errors.
+- Invalid `variable_filters`/`overlay_path_filter` regex values cause load-time errors.

@@ -17,6 +17,7 @@ filepath = "<CARD_DIR>/../data/study/{{CLASS}}/signal.json"
 - `*`: wildcard glob, not a selectable variable.
 - `[global]`: card defaults shared by subcards/series.
 - `[subcards.<name>]`: multi-panel card sections.
+- `__*.toml`: ignored by card discovery; useful for personal drafts that should stay out of the UI.
 - `chart_style`: string or object:
   - string: `chart_style = "scatter"`
   - object: `chart_style = { name = "scatter", marker_size = 7 }`
@@ -121,6 +122,7 @@ overlay_path_filter = "_relative"  # optional regex on resolved path
 [variable_filters]
 FRAG = "^[0-9.]+$"
 ```
+`variable_filters` and `overlay_path_filter` are validated when the card loads, so invalid regexes fail fast instead of surfacing later during discovery.
 
 ## 5. Table Customization
 

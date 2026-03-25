@@ -1,5 +1,3 @@
-import os
-
 import pytest
 
 PySide6 = pytest.importorskip("PySide6", reason="PySide6 not installed; install requirements to run renderer tests")
@@ -9,6 +7,8 @@ from PySide6 import QtCore, QtWidgets  # type: ignore
 
 from visualizer.interpretation.specs import PlotSpec, RenderInteraction, VisualizationType
 from visualizer.viz.renderer import PlotRenderer
+
+pytestmark = pytest.mark.gui
 
 
 class _FakeHoverEvent:
@@ -32,17 +32,7 @@ class _FakeHoverEvent:
     def screenPos(self) -> QtCore.QPointF:  # noqa: N802
         return self._screen_pos
 
-
-@pytest.fixture(scope="module")
-def app() -> QtWidgets.QApplication:
-    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-    existing = QtWidgets.QApplication.instance()
-    if existing:
-        return existing
-    return QtWidgets.QApplication([])
-
-
-def test_colormap_render_does_not_raise(app: QtWidgets.QApplication) -> None:
+def test_colormap_render_does_not_raise(qt_app: QtWidgets.QApplication) -> None:  # noqa: ARG001
     renderer = PlotRenderer()
     widget = pg.PlotWidget()
     spec = PlotSpec(
@@ -57,7 +47,7 @@ def test_colormap_render_does_not_raise(app: QtWidgets.QApplication) -> None:
     renderer.render(widget, spec)
 
 
-def test_eventline_render_does_not_raise(app: QtWidgets.QApplication) -> None:
+def test_eventline_render_does_not_raise(qt_app: QtWidgets.QApplication) -> None:  # noqa: ARG001
     renderer = PlotRenderer()
     widget = pg.PlotWidget()
     spec = PlotSpec(
@@ -72,7 +62,7 @@ def test_eventline_render_does_not_raise(app: QtWidgets.QApplication) -> None:
     renderer.render(widget, spec)
 
 
-def test_overlay_allows_mixed_dimensions(app: QtWidgets.QApplication) -> None:
+def test_overlay_allows_mixed_dimensions(qt_app: QtWidgets.QApplication) -> None:  # noqa: ARG001
     renderer = PlotRenderer()
     widget = pg.PlotWidget()
     specs = [
@@ -98,7 +88,7 @@ def test_overlay_allows_mixed_dimensions(app: QtWidgets.QApplication) -> None:
     renderer.render_multiple(widget, specs)
 
 
-def test_eventline_accepts_single_dimension(app: QtWidgets.QApplication) -> None:
+def test_eventline_accepts_single_dimension(qt_app: QtWidgets.QApplication) -> None:  # noqa: ARG001
     renderer = PlotRenderer()
     widget = pg.PlotWidget()
     spec = PlotSpec(
@@ -113,7 +103,7 @@ def test_eventline_accepts_single_dimension(app: QtWidgets.QApplication) -> None
     renderer.render(widget, spec)
 
 
-def test_stick_render_draws_vertical_sticks(app: QtWidgets.QApplication) -> None:
+def test_stick_render_draws_vertical_sticks(qt_app: QtWidgets.QApplication) -> None:  # noqa: ARG001
     renderer = PlotRenderer()
     widget = pg.PlotWidget()
     spec = PlotSpec(
@@ -138,7 +128,7 @@ def test_stick_render_draws_vertical_sticks(app: QtWidgets.QApplication) -> None
     assert pen.color().green() > 100
 
 
-def test_line_style_params_apply_width_color_and_alpha(app: QtWidgets.QApplication) -> None:
+def test_line_style_params_apply_width_color_and_alpha(qt_app: QtWidgets.QApplication) -> None:  # noqa: ARG001
     renderer = PlotRenderer()
     widget = pg.PlotWidget()
     spec = PlotSpec(
@@ -161,7 +151,7 @@ def test_line_style_params_apply_width_color_and_alpha(app: QtWidgets.QApplicati
     assert pen.color().alpha() == pytest.approx(127, abs=1)
 
 
-def test_scatter_style_params_apply_size_color_and_alpha(app: QtWidgets.QApplication) -> None:
+def test_scatter_style_params_apply_size_color_and_alpha(qt_app: QtWidgets.QApplication) -> None:  # noqa: ARG001
     renderer = PlotRenderer()
     widget = pg.PlotWidget()
     spec = PlotSpec(
@@ -186,7 +176,9 @@ def test_scatter_style_params_apply_size_color_and_alpha(app: QtWidgets.QApplica
     assert color.alpha() == pytest.approx(63, abs=1)
 
 
-def test_colormap_style_params_use_custom_palette(app: QtWidgets.QApplication, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_colormap_style_params_use_custom_palette(
+    qt_app: QtWidgets.QApplication, monkeypatch: pytest.MonkeyPatch  # noqa: ARG001
+) -> None:
     renderer = PlotRenderer()
     widget = pg.PlotWidget()
     seen: list[str] = []
@@ -212,7 +204,7 @@ def test_colormap_style_params_use_custom_palette(app: QtWidgets.QApplication, m
     assert "magma" in seen
 
 
-def test_colormap_lookup_table_reverse_flips_endpoints(app: QtWidgets.QApplication) -> None:
+def test_colormap_lookup_table_reverse_flips_endpoints(qt_app: QtWidgets.QApplication) -> None:  # noqa: ARG001
     renderer = PlotRenderer()
     cmap = pg.colormap.get("viridis")
 
@@ -233,7 +225,7 @@ def test_colormap_lookup_table_reverse_flips_endpoints(app: QtWidgets.QApplicati
     assert tuple(normal_lut[-1]) == tuple(reverse_lut[0])
 
 
-def test_eventline_style_params_resolve_color_and_alpha(app: QtWidgets.QApplication) -> None:
+def test_eventline_style_params_resolve_color_and_alpha(qt_app: QtWidgets.QApplication) -> None:  # noqa: ARG001
     renderer = PlotRenderer()
     color = renderer._resolve_eventline_color(  # type: ignore[attr-defined]
         {"color": "#cc0000", "alpha": 0.25},
@@ -246,7 +238,9 @@ def test_eventline_style_params_resolve_color_and_alpha(app: QtWidgets.QApplicat
     assert color.alpha() == pytest.approx(63, abs=1)
 
 
-def test_eventline_style_params_reverse_palette_changes_color(app: QtWidgets.QApplication) -> None:
+def test_eventline_style_params_reverse_palette_changes_color(
+    qt_app: QtWidgets.QApplication  # noqa: ARG001
+) -> None:
     renderer = PlotRenderer()
     normal = renderer._resolve_eventline_color(  # type: ignore[attr-defined]
         {"palette": "plasma", "alpha": 0.6},
@@ -267,7 +261,9 @@ def test_eventline_style_params_reverse_palette_changes_color(app: QtWidgets.QAp
     )
 
 
-def test_eventline_style_params_resolve_palette_when_color_missing(app: QtWidgets.QApplication) -> None:
+def test_eventline_style_params_resolve_palette_when_color_missing(
+    qt_app: QtWidgets.QApplication  # noqa: ARG001
+) -> None:
     renderer = PlotRenderer()
     color = renderer._resolve_eventline_color(  # type: ignore[attr-defined]
         {"palette": "plasma", "alpha": 0.6},
@@ -279,7 +275,7 @@ def test_eventline_style_params_resolve_palette_when_color_missing(app: QtWidget
     assert (color.red(), color.green(), color.blue()) != (0, 0, 0)
 
 
-def test_range_palette_reverse_flips_color_order(app: QtWidgets.QApplication) -> None:
+def test_range_palette_reverse_flips_color_order(qt_app: QtWidgets.QApplication) -> None:  # noqa: ARG001
     renderer = PlotRenderer()
     normal = renderer._resolve_range_colors(  # type: ignore[attr-defined]
         3,
@@ -296,7 +292,7 @@ def test_range_palette_reverse_flips_color_order(app: QtWidgets.QApplication) ->
     assert reverse[-1].getRgb() == normal[0].getRgb()
 
 
-def test_overlay_allows_one_dimensional_mix(app: QtWidgets.QApplication) -> None:
+def test_overlay_allows_one_dimensional_mix(qt_app: QtWidgets.QApplication) -> None:  # noqa: ARG001
     renderer = PlotRenderer()
     widget = pg.PlotWidget()
     specs = [
@@ -322,7 +318,7 @@ def test_overlay_allows_one_dimensional_mix(app: QtWidgets.QApplication) -> None
     renderer.render_multiple(widget, specs)
 
 
-def test_overlay_allows_stick_and_line(app: QtWidgets.QApplication) -> None:
+def test_overlay_allows_stick_and_line(qt_app: QtWidgets.QApplication) -> None:  # noqa: ARG001
     renderer = PlotRenderer()
     widget = pg.PlotWidget()
     specs = [
@@ -349,7 +345,7 @@ def test_overlay_allows_stick_and_line(app: QtWidgets.QApplication) -> None:
     assert any(isinstance(item, pg.PlotDataItem) for item in widget.getPlotItem().items)
 
 
-def test_range_render_does_not_raise(app: QtWidgets.QApplication) -> None:
+def test_range_render_does_not_raise(qt_app: QtWidgets.QApplication) -> None:  # noqa: ARG001
     renderer = PlotRenderer()
     widget = pg.PlotWidget()
     spec = PlotSpec(
@@ -365,12 +361,12 @@ def test_range_render_does_not_raise(app: QtWidgets.QApplication) -> None:
     renderer.render(widget, spec)
 
 
-def test_range_render_applies_hover_tooltips(app: QtWidgets.QApplication) -> None:
+def test_range_render_applies_hover_tooltips(qt_app: QtWidgets.QApplication) -> None:
     renderer = PlotRenderer()
     widget = pg.PlotWidget()
     widget.resize(320, 220)
     widget.show()
-    app.processEvents()
+    qt_app.processEvents()
     spec = PlotSpec(
         dataset_id="d7",
         label=None,
@@ -396,7 +392,7 @@ def test_range_render_applies_hover_tooltips(app: QtWidgets.QApplication) -> Non
 
     enter_pos = widget.viewport().mapToGlobal(QtCore.QPoint(40, 50))
     regions[0].hoverEvent(_FakeHoverEvent(enter_pos))
-    app.processEvents()
+    qt_app.processEvents()
 
     assert hover_box.isVisible() is True
     assert hover_box.objectName() == "plotHoverInfoBox"
@@ -405,17 +401,17 @@ def test_range_render_applies_hover_tooltips(app: QtWidgets.QApplication) -> Non
 
     move_pos = widget.viewport().mapToGlobal(QtCore.QPoint(120, 90))
     regions[0].hoverEvent(_FakeHoverEvent(move_pos))
-    app.processEvents()
+    qt_app.processEvents()
 
     assert hover_box.pos() != first_pos
 
     regions[0].hoverEvent(_FakeHoverEvent(move_pos, is_exit=True))
-    app.processEvents()
+    qt_app.processEvents()
 
     assert hover_box.isVisible() is False
 
 
-def test_colormap_rect_alignment(app: QtWidgets.QApplication) -> None:
+def test_colormap_rect_alignment(qt_app: QtWidgets.QApplication) -> None:  # noqa: ARG001
     renderer = PlotRenderer()
     widget = pg.PlotWidget()
     spec = PlotSpec(
@@ -435,7 +431,7 @@ def test_colormap_rect_alignment(app: QtWidgets.QApplication) -> None:
     assert rect.right() == pytest.approx(30.0)
 
 
-def test_colormap_downsample_keeps_peak_position(app: QtWidgets.QApplication) -> None:
+def test_colormap_downsample_keeps_peak_position(qt_app: QtWidgets.QApplication) -> None:  # noqa: ARG001
     renderer = PlotRenderer()
     widget = pg.PlotWidget()
     x = list(range(1000))

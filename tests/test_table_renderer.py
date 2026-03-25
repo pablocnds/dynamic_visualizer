@@ -8,13 +8,7 @@ from visualizer.interpretation.specs import TableSpec
 from visualizer.table_style import TableColorConfig, TableColorRule
 from visualizer.viz.table_renderer import TableModel, TableRenderer, TableView
 
-
-@pytest.fixture(scope="module")
-def app() -> QtWidgets.QApplication:
-    existing = QtWidgets.QApplication.instance()
-    if existing:
-        return existing
-    return QtWidgets.QApplication([])
+pytestmark = pytest.mark.gui
 
 
 def _background_rgb(model: TableModel, row: int, column: int) -> tuple[int, int, int]:
@@ -124,7 +118,9 @@ def test_table_model_preserves_grouped_header_metadata() -> None:
     assert list(groups[1].subcolumns) == []
 
 
-def test_table_view_shows_compact_title_when_available(app: QtWidgets.QApplication) -> None:  # noqa: ARG001
+def test_table_view_shows_compact_title_when_available(
+    qt_app: QtWidgets.QApplication  # noqa: ARG001
+) -> None:
     renderer = TableRenderer()
     view = TableView()
     spec = TableSpec(
@@ -143,7 +139,9 @@ def test_table_view_shows_compact_title_when_available(app: QtWidgets.QApplicati
     assert margins.top() <= 20
 
 
-def test_grouped_table_view_uses_taller_header(app: QtWidgets.QApplication) -> None:  # noqa: ARG001
+def test_grouped_table_view_uses_taller_header(
+    qt_app: QtWidgets.QApplication  # noqa: ARG001
+) -> None:
     renderer = TableRenderer()
     flat_view = TableView()
     flat_spec = TableSpec(
@@ -177,7 +175,7 @@ def test_grouped_table_view_uses_taller_header(app: QtWidgets.QApplication) -> N
     assert len(grouped_view.grouped_header().column_groups()) == 3
 
 
-def test_grouped_table_view_paints_without_header_errors(app: QtWidgets.QApplication) -> None:  # noqa: ARG001
+def test_grouped_table_view_paints_without_header_errors(qt_app: QtWidgets.QApplication) -> None:
     renderer = TableRenderer()
     view = TableView()
     spec = TableSpec(
@@ -196,7 +194,7 @@ def test_grouped_table_view_paints_without_header_errors(app: QtWidgets.QApplica
     renderer.render(view, spec)
     view.resize(800, 240)
     view.show()
-    app.processEvents()
+    qt_app.processEvents()
 
     pixmap = view.grab()
     top_left = view.model().index(0, 0)
@@ -209,7 +207,9 @@ def test_grouped_table_view_paints_without_header_errors(app: QtWidgets.QApplica
     assert view.visualRect(top_left).height() > 0
 
 
-def test_table_view_hides_title_when_label_missing(app: QtWidgets.QApplication) -> None:  # noqa: ARG001
+def test_table_view_hides_title_when_label_missing(
+    qt_app: QtWidgets.QApplication  # noqa: ARG001
+) -> None:
     renderer = TableRenderer()
     view = TableView()
     spec = TableSpec(

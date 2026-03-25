@@ -38,3 +38,12 @@ visualizer = ["assets/icons/*.png", "schema/*.json"]
 write_to = "src/visualizer/_version.py"
 write_to_template = "__version__ = \"{version}\"\n"
 fallback_version = "0.1.0"
+
+[tool.pytest.ini_options]
+addopts = "-ra"
+testpaths = ["tests"]
+xfail_strict = true
+markers = [
+  "contract: acceptance-style tests that pin public/example behavior",
+  "gui: tests that exercise the Qt/PyQtGraph stack",
+]

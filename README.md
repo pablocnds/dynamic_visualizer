@@ -13,6 +13,11 @@ Interactive framework for loading processed analytical datasets (JSON) and rende
 - Build a wheel with `python -m build`.
 - Test install in a clean environment with `pip install dist/*.whl`.
 
+## Testing
+- Run the full suite from the repository-local virtualenv with `PYTHONPATH=src .venv/bin/pytest`.
+- The suite is layered: fast loader/repository/controller unit tests, Qt/PyQtGraph GUI tests, and example-card contract tests that exercise every official file in `examples/cards`.
+- Card discovery ignores files prefixed with `__`, so scratch or personal card drafts do not appear in the app by default.
+
 ## Data Formats
 - JSON inputs must satisfy `src/visualizer/schema/data_payload.schema.json` (packaged as `visualizer/schema/data_payload.schema.json`).
 - Series data uses `x_axis` with an optional `y_axis`; table data uses either flat `column_names` or grouped `column_headers` plus `row_names` and a row-major `content` matrix, with optional `table_title` and `table_style`; range data uses `ranges` as `[start, end]` pairs along the X axis and optional `range_info` entries for an instant floating hover info box.
@@ -25,6 +30,7 @@ Recent sessions are validated on startup/menu refresh; entries pointing to remov
 ## Cards
 - Card prototypes can live anywhere. Use File > Open Card File to list available cards. Supported types include the simple wildcard card, the multi-variable (single path) card that cycles via `pivot_chart`, overlays (card 5), and composite cards with multiple subcards (cards 3, 4, 6) that may each specify different visualization styles.
 - Overlays can optionally specify an `overlay_variable` to auto-discover all matching series (e.g., multiple fragment files) and render them together without exposing that variable in the UI.
+- `variable_filters` and `overlay_path_filter` regexes are validated when cards load so invalid patterns fail fast with a clear error.
 - Visualization modes currently include line, scatter, stick (vertical lines from 0 to each Y value at each X position), a 1-D colormap strip (heat line along X), a 1-D event line (spikes at X positions; Y ignored), and 1-D range bands.
 - Select a card to auto-discover the matching datasets; use the Prev/Next controls to cycle through its files (non-pivot variables default to the first alphabetical value, pivot variables cycle). If those alphabetical defaults produce an invalid combination, the session snaps to the nearest discovered match automatically. Variable selectors appear in the sidebar so you can manually choose dataset/class combinations (including the active pivot value); each selector is constrained to values that remain valid with the current selection so the UI does not offer impossible combinations.
 - Chart-style palette names are validated when cards load. Supported chart palettes are `viridis`, `plasma`, `cividis`, `magma`, and `turbo`; color values accept named colors, hex strings, or RGB/RGBA sequences.

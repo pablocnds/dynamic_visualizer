@@ -7,6 +7,7 @@ Desktop GUI (PySide6 + PyQtGraph) that loads JSON data, infers sensible defaults
 - Install editable + dev tools: `pip install -e ".[dev]"`
 - Run the app with `dynamic-visualizer` or `python -m visualizer`.
 - Build/test a wheel: `python -m build` then install `dist/*.whl` in a clean environment.
+- Run the full local test suite with `PYTHONPATH=src .venv/bin/pytest`.
 
 ## Architecture Snapshot
 - **Data access:** `DatasetRepository` loads JSON with length/number validation, coerces types, caches by path+mtime. JSON payloads are schema-validated when `jsonschema` is installed. Dataset discovery is recursive when a folder is chosen.
@@ -27,11 +28,19 @@ Desktop GUI (PySide6 + PyQtGraph) that loads JSON data, infers sensible defaults
 ## Card Rules (see `docs/card_specification.md` and `docs/cards_reference.md`)
 - Variables (`{{VAR}}`) are single-level components discovered from directory/file names. Wildcards (`*`) are plain globs and not exposed as variables.
 - `pivot_chart` is optional; when omitted, cards default to the first discovered variable (alphabetical).
-- Subcards may set `chart_height` and `chart_style`; overlays accept arrays for `filepath`/`chart_style`, optional per-series labels, and fall back to the global style when unspecified. Variable-level regex filters apply to overlays too.
+- Subcards may set `chart_height` and `chart_style`; overlays accept arrays for `filepath`/`chart_style`, optional per-series labels, and fall back to the global style when unspecified. Variable-level regex filters apply to overlays too, and invalid regexes fail at card load time.
 - Discovery is template-driven and bounded per subcard; recursive scans are limited to variable positions, not arbitrary depth. Wildcards that remain in non-overlay paths must resolve to exactly one file.
+- Card discovery ignores `__*.toml` files so personal scratch cards do not leak into the normal UI/test surface.
+
+## Testing Strategy
+- **Unit/core tests:** repository, loader, interpretation, and controller tests should stay fast and deterministic. These are the default signal for validation, selection logic, and compatibility rules.
+- **GUI/runtime tests:** renderer, table, and main-window tests run against the repo-local Qt stack in offscreen mode. They should verify rendering invariants and state transitions, not just import-level smoke coverage.
+- **Contract tests:** every official example card in `examples/cards` is treated as an acceptance contract. If an example is documented, it must resolve, plan, and render cleanly.
+- **Quality-bar tests:** malformed user inputs should fail with clear `ValueError` messages even when optional schema validation is unavailable. Do not rely on `jsonschema` alone to produce usable errors.
+- **Fixture policy:** use shared pytest fixtures for Qt application bootstrap and example paths so the suite has one consistent runtime model.
 
 ## Near-Term Work
 - Add caching/decimation strategies for very large datasets.
 - Expand interpreters/renderers beyond line/scatter/stick (e.g., boolean/heat maps).
 - Broaden validation and error surfacing in the GUI (e.g., schema path display, missing files per panel).
-- Grow test coverage across GUI callbacks and additional card scenarios.
+- Add a small set of targeted `xfail` usability/spec tests when behavior is intentionally not implemented yet but the desired contract is already clear.

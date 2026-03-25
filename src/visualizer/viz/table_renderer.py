@@ -254,18 +254,13 @@ class GroupedTableHeaderView(QtWidgets.QHeaderView):
         size.setHeight(self._target_height())
         return size
 
-    def sectionSizeFromContents(self, logical_index: int) -> QtCore.QSize:  # type: ignore[override]
-        size = super().sectionSizeFromContents(logical_index)
-        size.setHeight(self._target_height())
-        return size
-
     def paintEvent(self, event: QtGui.QPaintEvent) -> None:  # type: ignore[override]
         if not self.has_grouped_headers():
             super().paintEvent(event)
             return
         painter = QtWidgets.QStylePainter(self.viewport())
         try:
-            top_height = self._row_height()
+            top_height = self._base_row_height()
             bottom_height = max(0, self.height() - top_height)
             visible_rect = event.rect()
             logical_index = 0
@@ -339,13 +334,22 @@ class GroupedTableHeaderView(QtWidgets.QHeaderView):
         style.drawControl(QtWidgets.QStyle.ControlElement.CE_HeaderLabel, option, painter, self)
 
     def _target_height(self) -> int:
-        row_height = self._row_height()
+        row_height = self._base_row_height()
         if self.has_grouped_headers():
             return row_height * 2
         return row_height
 
-    def _row_height(self) -> int:
-        return max(super().sizeHint().height(), self.fontMetrics().height() + 8)
+    def _base_row_height(self) -> int:
+        option = QtWidgets.QStyleOptionHeader()
+        self.initStyleOption(option)
+        content_size = QtCore.QSize(0, self.fontMetrics().height())
+        style_height = self.style().sizeFromContents(
+            QtWidgets.QStyle.CT_HeaderSection,
+            option,
+            content_size,
+            self,
+        ).height()
+        return max(style_height, self.fontMetrics().height() + 8)
 
     @staticmethod
     def _section_position(

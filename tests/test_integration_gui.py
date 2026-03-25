@@ -173,6 +173,9 @@ def test_grouped_table_card_renders_grouped_header(app: QtWidgets.QApplication) 
     table = tables[0]
     assert table.model() is not None
     assert table.grouped_header().has_grouped_headers() is True
+    assert table.horizontalHeader().height() < table.height()
+    assert table.viewport().height() > 0
+    assert table.visualRect(table.model().index(0, 0)).height() > 0
     assert len(table.grouped_header().column_groups()) == 3
     assert table.table_title() == "Grouped Model Comparison"
 

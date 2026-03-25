@@ -172,6 +172,8 @@ def test_grouped_table_view_uses_taller_header(app: QtWidgets.QApplication) -> N
 
     assert grouped_view.grouped_header().has_grouped_headers() is True
     assert grouped_view.horizontalHeader().height() > flat_view.horizontalHeader().height()
+    assert grouped_view.horizontalHeader().height() < grouped_view.height()
+    assert grouped_view.viewport().height() > 0
     assert len(grouped_view.grouped_header().column_groups()) == 3
 
 
@@ -197,10 +199,14 @@ def test_grouped_table_view_paints_without_header_errors(app: QtWidgets.QApplica
     app.processEvents()
 
     pixmap = view.grab()
+    top_left = view.model().index(0, 0)
 
     assert not pixmap.isNull()
     assert pixmap.size().width() > 0
     assert pixmap.size().height() > 0
+    assert view.horizontalHeader().height() < view.height()
+    assert view.viewport().height() > 0
+    assert view.visualRect(top_left).height() > 0
 
 
 def test_table_view_hides_title_when_label_missing(app: QtWidgets.QApplication) -> None:  # noqa: ARG001

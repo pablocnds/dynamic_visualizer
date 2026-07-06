@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Mapping
 
 from visualizer.interpretation.specs import VisualizationType
@@ -9,7 +10,14 @@ from visualizer.palettes import CHART_PALETTES, validate_color_value, validate_p
 _ALLOWED_ARGS_BY_VISUALIZATION: dict[VisualizationType, tuple[str, ...]] = {
     VisualizationType.LINE: ("color", "alpha", "line_width", "width"),
     VisualizationType.SCATTER: ("color", "alpha", "marker_size", "size"),
-    VisualizationType.STICK: ("color", "alpha", "line_width", "width"),
+    VisualizationType.STICK: (
+        "color",
+        "alpha",
+        "line_width",
+        "width",
+        "label_top_n",
+        "label_threshold",
+    ),
     VisualizationType.COLORMAP: ("palette", "alpha", "reverse"),
     VisualizationType.EVENTLINE: ("color", "palette", "alpha", "reverse"),
     VisualizationType.RANGE: ("colors", "palette", "alpha", "reverse"),
@@ -83,4 +91,36 @@ def _validate_arg_types(style_name: str, params: Mapping[str, object], *, contex
             validate_color_value(
                 value,
                 context=f"{context} chart_style '{style_name}' arg 'colors[{idx}]'",
+            )
+
+    label_top_n = params.get("label_top_n")
+    if label_top_n is not None and (
+        isinstance(label_top_n, bool)
+        or not isinstance(label_top_n, int)
+        or label_top_n <= 0
+    ):
+        raise ValueError(
+            f"{context} chart_style '{style_name}' arg 'label_top_n' "
+            "must be a positive integer"
+        )
+
+    label_threshold = params.get("label_threshold")
+    if label_threshold is not None:
+        is_number = (
+            not isinstance(label_threshold, bool)
+            and isinstance(label_threshold, (int, float))
+        )
+        relative_match = (
+            re.fullmatch(r"(?:\d+(?:\.\d*)?|\.\d+)%", label_threshold.strip())
+            if isinstance(label_threshold, str)
+            else None
+        )
+        relative_in_range = (
+            relative_match is not None
+            and 0.0 <= float(label_threshold.strip()[:-1]) <= 100.0
+        )
+        if not is_number and not relative_in_range:
+            raise ValueError(
+                f"{context} chart_style '{style_name}' arg 'label_threshold' "
+                'must be numeric or a percentage string between "0%" and "100%"'
             )

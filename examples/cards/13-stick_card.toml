@@ -2,6 +2,6 @@
 
 [global]
 pivot_chart = "{{CLASS}}"
-chart_style = { name = "stick", color = "#1e4f9a", line_width = 1.0, alpha = 0.9 }
+chart_style = { name = "stick", color = "#1e4f9a", line_width = 1.0, alpha = 0.9, label_top_n = 2, label_threshold = "30%" }
 
 filepath = "<CARD_DIR>/../data/overlay_demo/{{CLASS}}/msms_spectrum.json"

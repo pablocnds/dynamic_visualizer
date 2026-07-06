@@ -128,6 +128,58 @@ def test_stick_render_draws_vertical_sticks(qt_app: QtWidgets.QApplication) -> N
     assert pen.color().green() > 100
 
 
+def test_stick_labels_union_of_top_n_and_relative_threshold(
+    qt_app: QtWidgets.QApplication,  # noqa: ARG001
+) -> None:
+    renderer = PlotRenderer()
+    widget = pg.PlotWidget()
+    spec = PlotSpec(
+        dataset_id="labeled-msms",
+        label=None,
+        x=[100.0, 130.5, 210.0, 333.0],
+        y=[10.0, 60.0, 20.0, 5.0],
+        x_label="mz",
+        y_label="intensity",
+        visualization=VisualizationType.STICK,
+        style_params={"label_top_n": 1, "label_threshold": "30%"},
+    )
+
+    renderer.render(widget, spec)
+
+    labels = [
+        item.toPlainText()
+        for item in widget.getPlotItem().items
+        if isinstance(item, pg.TextItem)
+    ]
+    assert labels == ["130.5", "210"]
+
+
+def test_stick_labels_support_absolute_threshold(
+    qt_app: QtWidgets.QApplication,  # noqa: ARG001
+) -> None:
+    renderer = PlotRenderer()
+    widget = pg.PlotWidget()
+    spec = PlotSpec(
+        dataset_id="absolute-threshold",
+        label=None,
+        x=["low", "mid", "high"],
+        y=[10.0, 30.0, 50.0],
+        x_label="category",
+        y_label="intensity",
+        visualization=VisualizationType.STICK,
+        style_params={"label_threshold": 30},
+    )
+
+    renderer.render(widget, spec)
+
+    labels = [
+        item.toPlainText()
+        for item in widget.getPlotItem().items
+        if isinstance(item, pg.TextItem)
+    ]
+    assert labels == ["mid", "high"]
+
+
 def test_line_render_supports_categorical_x_axis(qt_app: QtWidgets.QApplication) -> None:  # noqa: ARG001
     renderer = PlotRenderer()
     widget = pg.PlotWidget()

@@ -227,6 +227,51 @@ chart_style = { name = "line", alpha = "opaque" }
         loader.load_definition(card_path)
 
 
+def test_stick_chart_style_accepts_label_selection_args(tmp_path: Path) -> None:
+    cards_dir = tmp_path / "cards"
+    cards_dir.mkdir(parents=True, exist_ok=True)
+    card_path = cards_dir / "stick_labels.toml"
+    card_path.write_text(
+        """
+filepath = "<CARD_DIR>/data.json"
+chart_style = { name = "stick", label_top_n = 3, label_threshold = "30%" }
+"""
+    )
+
+    definition = CardLoader(cards_dir).load_definition(card_path)
+
+    assert definition.chart_style is not None
+    assert definition.chart_style.params["label_top_n"] == 3
+    assert definition.chart_style.params["label_threshold"] == "30%"
+
+
+@pytest.mark.parametrize(
+    ("argument", "message"),
+    [
+        ("label_top_n = 0", "label_top_n.*positive integer"),
+        ('label_threshold = "high"', "label_threshold.*numeric or a percentage"),
+        ('label_threshold = "101%"', "label_threshold.*numeric or a percentage"),
+    ],
+)
+def test_stick_chart_style_rejects_invalid_label_selection_args(
+    tmp_path: Path,
+    argument: str,
+    message: str,
+) -> None:
+    cards_dir = tmp_path / "cards"
+    cards_dir.mkdir(parents=True, exist_ok=True)
+    card_path = cards_dir / "invalid_stick_labels.toml"
+    card_path.write_text(
+        f"""
+filepath = "<CARD_DIR>/data.json"
+chart_style = {{ name = "stick", {argument} }}
+"""
+    )
+
+    with pytest.raises(ValueError, match=message):
+        CardLoader(cards_dir).load_definition(card_path)
+
+
 def test_chart_style_rejects_invalid_reverse_type(tmp_path: Path) -> None:
     cards_dir = tmp_path / "cards"
     cards_dir.mkdir(parents=True, exist_ok=True)

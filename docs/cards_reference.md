@@ -37,7 +37,7 @@ Supported args by style:
 |---|---|
 | `line` | `color`, `alpha`, `line_width`/`width` |
 | `scatter` | `color`, `alpha`, `marker_size`/`size` |
-| `stick` | `color`, `alpha`, `line_width`/`width` |
+| `stick` | `color`, `alpha`, `line_width`/`width`, `label_top_n`, `label_threshold` |
 | `colormap` | `palette`, `alpha`, `reverse` |
 | `eventline` | `color`, `palette`, `alpha`, `reverse` |
 | `ranges` | `colors`, `palette`, `alpha`, `reverse` (`colors` takes precedence) |
@@ -46,6 +46,11 @@ Aliases:
 - `heatmap1d`, `colormap_line` -> `colormap`
 - `events`, `spikes` -> `eventline`
 - `range` -> `ranges`
+
+Stick labels display the original X value. `label_top_n = 5` selects the five
+largest finite Y values. `label_threshold` accepts an absolute number or a
+percentage string such as `"30%"`, measured against the largest finite Y value.
+When both options are set, their selections are combined.
 
 ## 4. Common Templates
 

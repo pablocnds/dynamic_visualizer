@@ -567,6 +567,7 @@ class PlotRenderer:
             return
         x_values = x_values[valid]
         y_values = y_values[valid]
+        original_x_values = np.asarray(list(spec.x[:count]), dtype=object)[valid]
         x_pairs = np.repeat(x_values, 2)
         y_pairs = np.empty(x_pairs.size, dtype=float)
         y_pairs[0::2] = 0.0
@@ -587,6 +588,71 @@ class PlotRenderer:
             symbol=None,
             **kwargs,
         )
+        self._render_stick_labels(
+            widget,
+            x_values=x_values,
+            y_values=y_values,
+            original_x_values=original_x_values,
+            style_params=spec.style_params,
+            color=pen_color,
+        )
+
+    def _render_stick_labels(
+        self,
+        widget: pg.PlotWidget,
+        *,
+        x_values: np.ndarray,
+        y_values: np.ndarray,
+        original_x_values: np.ndarray,
+        style_params: dict | None,
+        color: pg.QtGui.QColor,
+    ) -> None:
+        if not style_params:
+            return
+        top_n = style_params.get("label_top_n")
+        threshold = style_params.get("label_threshold")
+        if top_n is None and threshold is None:
+            return
+
+        selected: set[int] = set()
+        if top_n is not None:
+            count = min(int(top_n), y_values.size)
+            selected.update(
+                int(index)
+                for index in np.argsort(-y_values, kind="stable")[:count]
+            )
+        if threshold is not None:
+            threshold_value = self._resolve_stick_label_threshold(threshold, y_values)
+            selected.update(
+                int(index)
+                for index in np.flatnonzero(y_values >= threshold_value)
+            )
+
+        for index in sorted(selected):
+            label = pg.TextItem(
+                self._format_stick_label(original_x_values[index]),
+                color=color,
+                anchor=(0.5, 1.0 if y_values[index] >= 0 else 0.0),
+            )
+            label.setPos(float(x_values[index]), float(y_values[index]))
+            label.setZValue(20)
+            widget.addItem(label)
+
+    @staticmethod
+    def _resolve_stick_label_threshold(
+        threshold: object,
+        y_values: np.ndarray,
+    ) -> float:
+        if isinstance(threshold, str):
+            percentage = float(threshold.strip()[:-1]) / 100.0
+            return float(np.max(y_values)) * percentage
+        return float(threshold)
+
+    @staticmethod
+    def _format_stick_label(value: object) -> str:
+        if isinstance(value, (float, np.floating)):
+            return f"{float(value):g}"
+        return str(value)
 
     def _resolve_series_color(
         self,

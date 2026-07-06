@@ -239,7 +239,7 @@ Supported chart styles:
 | --- | --- | --- |
 | `line` | continuous series | `color`, `alpha`, `line_width` or `width` |
 | `scatter` | point clouds, detected points | `color`, `alpha`, `marker_size` or `size` |
-| `stick` | spectra or impulse-like intensities | `color`, `alpha`, `line_width` or `width` |
+| `stick` | spectra or impulse-like intensities | `color`, `alpha`, `line_width` or `width`, `label_top_n`, `label_threshold` |
 | `colormap` | 1-D heat strip along X | `palette`, `alpha`, `reverse` |
 | `eventline` | spikes/events along X | `color`, `palette`, `alpha`, `reverse` |
 | `ranges` | interval bands along X | `colors`, `palette`, `alpha`, `reverse` |
@@ -253,6 +253,11 @@ Aliases are accepted, but prefer canonical names in new cards:
 Chart palettes: `viridis`, `plasma`, `cividis`, `magma`, `turbo`.
 
 Color values may be named colors, hex strings, or RGB/RGBA sequences.
+
+For stick charts, `label_top_n = 5` labels the five largest Y values.
+`label_threshold` accepts either an absolute Y value or a relative string such
+as `"30%"` (relative to the maximum Y). Both selectors may be combined; labels
+show the original X values.
 
 Tables render as tables when no `chart_style` is specified. Do not set a chart style
 on table payloads. In mixed chart/table cards, avoid a global `chart_style`; set

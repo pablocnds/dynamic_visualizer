@@ -20,6 +20,7 @@ Guidelines for working on this repository across sessions.
 - Preserve a clean, abstract architecture (data loading, interpretation, rendering, GUI).
 - If a new feature does not fit the current architecture cleanly, suggest a refactor first.
   Avoid quick fixes that add complexity or risk regressions.
+- Make sure any change or implementation is consistent and unified with the rest of the code.
 
 ## Workflow and Hygiene
 - Keep changes focused and readable; refactor when it improves clarity or reduces coupling.
